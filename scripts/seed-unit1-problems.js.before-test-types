@@ -1,0 +1,1396 @@
+const path = require('path');
+const admin = require('firebase-admin');
+
+const serviceAccount = require(
+  path.join(__dirname, '..', 'serviceAccountKey.json')
+);
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+  projectId: serviceAccount.project_id,
+});
+
+const db = admin.firestore();
+
+
+// =========================================================
+// UNIT 1.1 — SYLLABUS-ALIGNED PROBLEM BANK
+// =========================================================
+
+const problems = [
+
+  // =======================================================
+  // 1.1 COMPUTATIONAL THINKING
+  // =======================================================
+
+  {
+    id: '1_1_01',
+    topicCode: '1.1',
+    title: 'Break a Student Result Problem into Smaller Tasks',
+    problemType: 'lab',
+    difficulty: 'easy',
+    order: 1,
+
+    problem: `
+Identify the major steps required to develop a student result
+processing system.
+
+The system should accept marks, calculate the total and average,
+determine the grade, and display the result.
+
+Write the steps in the correct order.
+`,
+
+    starterCode: `# Write the major problem-solving steps.
+# Step 1:
+# Step 2:
+# Step 3:
+# Step 4:
+# Step 5:
+`,
+
+    solution: `Step 1: Read the student marks.
+Step 2: Calculate the total marks.
+Step 3: Calculate the average.
+Step 4: Determine the grade.
+Step 5: Display the result.`,
+
+    testCases: [],
+
+    visible: false,
+  },
+
+
+  {
+    id: '1_1_02',
+    topicCode: '1.1',
+    title: 'Calculate Student Average',
+    problemType: 'lab',
+    difficulty: 'easy',
+    order: 2,
+
+    problem: `
+Write a Python program to calculate the average of five marks.
+
+Input:
+Five integer marks, one per line.
+
+Output:
+Display the average.
+`,
+
+    starterCode: `marks = []
+
+# Read five marks
+# Calculate the average
+# Display the average
+`,
+
+    solution: `marks = []
+
+for i in range(5):
+    marks.append(int(input()))
+
+average = sum(marks) / len(marks)
+
+print(average)`,
+
+    testCases: [
+      {
+        input: '80\\n70\\n90\\n60\\n100',
+        expectedOutput: '80.0',
+      },
+      {
+        input: '50\\n50\\n50\\n50\\n50',
+        expectedOutput: '50.0',
+      },
+    ],
+
+    visible: false,
+  },
+
+
+  // =======================================================
+  // 1.1.1 CHARACTERISTICS
+  // =======================================================
+
+  {
+    id: '1_1_1_01',
+    topicCode: '1.1.1',
+    title: 'Identify Computational Thinking Characteristics',
+    problemType: 'lab',
+    difficulty: 'easy',
+    order: 1,
+
+    problem: `
+A student-result system contains the following tasks:
+
+1. Read marks.
+2. Calculate total.
+3. Calculate average.
+4. Determine grade.
+5. Display result.
+
+Identify how decomposition and algorithmic thinking are used.
+`,
+
+    starterCode: `# Write your answer in comments.
+
+# Decomposition:
+
+# Algorithmic thinking:
+`,
+
+    solution: `# Decomposition:
+# The complete result-processing problem is divided into smaller tasks.
+
+# Algorithmic thinking:
+# The tasks are arranged in a clear sequence.`,
+
+    testCases: [],
+
+    visible: false,
+  },
+
+
+  {
+    id: '1_1_1_02',
+    topicCode: '1.1.1',
+    title: 'ATM Withdrawal Decision',
+    problemType: 'lab',
+    difficulty: 'easy',
+    order: 2,
+
+    problem: `
+Write a Python program for an ATM withdrawal.
+
+Input:
+Current account balance and withdrawal amount.
+
+If the withdrawal amount is less than or equal to the balance,
+display:
+
+Withdrawal successful
+Remaining balance: <balance>
+
+Otherwise display:
+
+Insufficient balance
+`,
+
+    starterCode: `balance = int(input())
+amount = int(input())
+
+# Complete the program
+`,
+
+    solution: `balance = int(input())
+amount = int(input())
+
+if amount <= balance:
+    balance = balance - amount
+    print("Withdrawal successful")
+    print("Remaining balance:", balance)
+else:
+    print("Insufficient balance")`,
+
+    testCases: [
+      {
+        input: '5000\\n1500',
+        expectedOutput:
+          'Withdrawal successful\\nRemaining balance: 3500',
+      },
+      {
+        input: '1000\\n1500',
+        expectedOutput:
+          'Insufficient balance',
+      },
+    ],
+
+    visible: false,
+  },
+
+
+  // =======================================================
+  // 1.1.2 PROBLEM-SOLVING STRATEGIES
+  // =======================================================
+
+  {
+    id: '1_1_2_01',
+    topicCode: '1.1.2',
+    title: 'Find the Largest of Two Numbers',
+    problemType: 'lab',
+    difficulty: 'easy',
+    order: 1,
+
+    problem: `
+Write a Python program to find the largest of two integers.
+
+Input:
+Two integers.
+
+Output:
+Print the larger number.
+`,
+
+    starterCode: `a = int(input())
+b = int(input())
+
+# Find and print the largest number
+`,
+
+    solution: `a = int(input())
+b = int(input())
+
+if a > b:
+    print(a)
+else:
+    print(b)`,
+
+    testCases: [
+      {
+        input: '10\\n20',
+        expectedOutput: '20',
+        condition: 'Second number is larger',
+      },
+      {
+        input: '50\\n30',
+        expectedOutput: '50',
+        condition: 'First number is larger',
+      },
+      {
+        input: '-5\\n-2',
+        expectedOutput: '-2',
+        condition: 'Both numbers are negative; second number is larger',
+      },
+    ],
+
+    visible: false,
+  },
+
+
+  {
+    id: '1_1_2_02',
+    topicCode: '1.1.2',
+    title: 'Check Even or Odd',
+    problemType: 'lab',
+    difficulty: 'easy',
+    order: 2,
+
+    problem: `
+Write a Python program to determine whether an integer is even or odd.
+
+Input:
+One integer.
+
+Output:
+Print Even or Odd.
+`,
+
+    starterCode: `n = int(input())
+
+# Complete the program
+`,
+
+    solution: `n = int(input())
+
+if n % 2 == 0:
+    print("Even")
+else:
+    print("Odd")`,
+
+testCases: [
+  {
+    input: '10',
+    expectedOutput: 'Even',
+    condition: 'Number is even',
+  },
+  {
+    input: '17',
+    expectedOutput: 'Odd',
+    condition: 'Number is odd',
+  },
+  {
+    input: '0',
+    expectedOutput: 'Even',
+    condition: 'Zero is even',
+  },
+],
+    visible: false,
+  },
+
+
+  {
+    id: '1_1_2_03',
+    topicCode: '1.1.2',
+    title: 'Simple Grade Calculator',
+    problemType: 'lab',
+    difficulty: 'medium',
+    order: 3,
+
+    problem: `
+Write a Python program to determine a student's grade from marks.
+
+Rules:
+
+90-100 : A
+80-89  : B
+70-79  : C
+60-69  : D
+Below 60 : F
+
+Input:
+One integer representing marks.
+
+Output:
+Print the grade.
+`,
+
+    starterCode: `marks = int(input())
+
+# Determine the grade
+`,
+
+    solution: `marks = int(input())
+
+if marks >= 90:
+    print("A")
+elif marks >= 80:
+    print("B")
+elif marks >= 70:
+    print("C")
+elif marks >= 60:
+    print("D")
+else:
+    print("F")`,
+testCases: [
+  {
+    input: '95',
+    expectedOutput: 'A',
+    condition: 'Marks are in the 90–100 range',
+  },
+  {
+    input: '82',
+    expectedOutput: 'B',
+    condition: 'Marks are in the 80–89 range',
+  },
+  {
+    input: '74',
+    expectedOutput: 'C',
+    condition: 'Marks are in the 70–79 range',
+  },
+  {
+    input: '45',
+    expectedOutput: 'F',
+    condition: 'Marks are below 60',
+  },
+],
+
+    visible: false,
+  },
+
+
+  // =======================================================
+  // 1.1.3 STEPS IN PROBLEM SOLVING
+  // =======================================================
+
+  {
+    id: '1_1_3_01',
+    topicCode: '1.1.3',
+    title: 'Calculate Simple Interest',
+    problemType: 'lab',
+    difficulty: 'easy',
+    order: 1,
+
+    problem: `
+Write a Python program to calculate simple interest.
+
+Formula:
+SI = (P × R × T) / 100
+
+Input:
+Principal amount P
+Rate R
+Time T
+
+Each value is given on a separate line.
+
+Output:
+Print the simple interest.
+`,
+
+    starterCode: `p = float(input())
+r = float(input())
+t = float(input())
+
+# Calculate simple interest
+`,
+
+    solution: `p = float(input())
+r = float(input())
+t = float(input())
+
+si = (p * r * t) / 100
+
+print(si)`,
+
+    testCases: [
+      {
+        input: '1000\\n5\\n2',
+        expectedOutput: '100.0',
+      },
+      {
+        input: '5000\\n10\\n3',
+        expectedOutput: '1500.0',
+      },
+    ],
+
+    visible: false,
+  },
+
+
+  {
+    id: '1_1_3_02',
+    topicCode: '1.1.3',
+    title: 'Convert Celsius to Fahrenheit',
+    problemType: 'lab',
+    difficulty: 'easy',
+    order: 2,
+
+    problem: `
+Write a Python program to convert temperature from Celsius to Fahrenheit.
+
+Formula:
+F = (C × 9/5) + 32
+`,
+
+    starterCode: `c = float(input())
+
+# Convert Celsius to Fahrenheit
+`,
+
+    solution: `c = float(input())
+
+f = (c * 9 / 5) + 32
+
+print(f)`,
+
+    testCases: [
+      {
+        input: '0',
+        expectedOutput: '32.0',
+      },
+      {
+        input: '100',
+        expectedOutput: '212.0',
+      },
+      {
+        input: '25',
+        expectedOutput: '77.0',
+      },
+    ],
+
+    visible: false,
+  },
+
+
+  // =======================================================
+  // 1.1.4 ALGORITHMS
+  // =======================================================
+
+  {
+    id: '1_1_4_01',
+    topicCode: '1.1.4',
+    title: 'Find the Largest of Three Numbers',
+    problemType: 'lab',
+    difficulty: 'easy',
+    order: 1,
+
+    problem: `
+Write a Python program to find the largest of three integers.
+
+Input:
+Three integers, one per line.
+
+Output:
+Print the largest number.
+`,
+
+    starterCode: `a = int(input())
+b = int(input())
+c = int(input())
+
+# Find the largest
+`,
+
+    solution: `a = int(input())
+b = int(input())
+c = int(input())
+
+largest = a
+
+if b > largest:
+    largest = b
+
+if c > largest:
+    largest = c
+
+print(largest)`,
+
+    testCases: [
+      {
+        input: '10\\n25\\n15',
+        expectedOutput: '25',
+      },
+      {
+        input: '50\\n30\\n40',
+        expectedOutput: '50',
+      },
+      {
+        input: '-5\\n-2\\n-10',
+        expectedOutput: '-2',
+      },
+    ],
+
+    visible: false,
+  },
+
+
+  {
+    id: '1_1_4_02',
+    topicCode: '1.1.4',
+    title: 'Calculate Factorial',
+    problemType: 'lab',
+    difficulty: 'easy',
+    order: 2,
+
+    problem: `
+Write a Python program to calculate the factorial of a non-negative integer.
+
+Input:
+One integer n.
+
+Output:
+Print n!.
+`,
+
+    starterCode: `n = int(input())
+
+# Calculate factorial
+`,
+
+    solution: `n = int(input())
+
+factorial = 1
+
+for i in range(1, n + 1):
+    factorial *= i
+
+print(factorial)`,
+
+    testCases: [
+      {
+        input: '5',
+        expectedOutput: '120',
+      },
+      {
+        input: '0',
+        expectedOutput: '1',
+      },
+      {
+        input: '7',
+        expectedOutput: '5040',
+      },
+    ],
+
+    visible: false,
+  },
+
+
+  {
+    id: '1_1_4_03',
+    topicCode: '1.1.4',
+    title: 'Check Prime Number',
+    problemType: 'placement',
+    difficulty: 'medium',
+    order: 3,
+
+    problem: `
+Write a Python program to determine whether a number is prime.
+
+A prime number has exactly two positive divisors: 1 and itself.
+
+Input:
+One integer n.
+
+Output:
+Print Prime if n is prime; otherwise print Not Prime.
+`,
+
+    starterCode: `n = int(input())
+
+# Check whether n is prime
+`,
+
+    solution: `n = int(input())
+
+if n < 2:
+    print("Not Prime")
+else:
+    prime = True
+
+    for i in range(2, int(n ** 0.5) + 1):
+        if n % i == 0:
+            prime = False
+            break
+
+    if prime:
+        print("Prime")
+    else:
+        print("Not Prime")`,
+
+    testCases: [
+      {
+        input: '7',
+        expectedOutput: 'Prime',
+      },
+      {
+        input: '10',
+        expectedOutput: 'Not Prime',
+      },
+      {
+        input: '1',
+        expectedOutput: 'Not Prime',
+      },
+      {
+        input: '97',
+        expectedOutput: 'Prime',
+      },
+    ],
+
+    visible: false,
+  },
+
+
+  {
+    id: '1_1_4_04',
+    topicCode: '1.1.4',
+    title: 'Reverse a Number',
+    problemType: 'lab',
+    difficulty: 'easy',
+    order: 4,
+
+    problem: `
+Write a Python program to reverse the digits of a positive integer.
+
+Input:
+One positive integer.
+
+Output:
+Print the reversed number.
+`,
+
+    starterCode: `n = int(input())
+
+# Reverse the number
+`,
+
+    solution: `n = int(input())
+
+reverse = 0
+
+while n > 0:
+    digit = n % 10
+    reverse = reverse * 10 + digit
+    n //= 10
+
+print(reverse)`,
+
+    testCases: [
+      {
+        input: '12345',
+        expectedOutput: '54321',
+      },
+      {
+        input: '1000',
+        expectedOutput: '1',
+      },
+      {
+        input: '987',
+        expectedOutput: '789',
+      },
+    ],
+
+    visible: false,
+  },
+
+
+  {
+    id: '1_1_4_05',
+    topicCode: '1.1.4',
+    title: 'Check Palindrome Number',
+    problemType: 'placement',
+    difficulty: 'medium',
+    order: 5,
+
+    problem: `
+A number is a palindrome if it reads the same from left to right
+and right to left.
+
+Write a Python program to determine whether the given number is
+a palindrome.
+
+Input:
+One positive integer.
+
+Output:
+Print Palindrome or Not Palindrome.
+`,
+
+    starterCode: `n = int(input())
+
+# Check palindrome
+`,
+
+    solution: `n = int(input())
+
+original = n
+reverse = 0
+
+while n > 0:
+    digit = n % 10
+    reverse = reverse * 10 + digit
+    n //= 10
+
+if original == reverse:
+    print("Palindrome")
+else:
+    print("Not Palindrome")`,
+
+    testCases: [
+      {
+        input: '121',
+        expectedOutput: 'Palindrome',
+      },
+      {
+        input: '123',
+        expectedOutput: 'Not Palindrome',
+      },
+      {
+        input: '1221',
+        expectedOutput: 'Palindrome',
+      },
+    ],
+
+    visible: false,
+  },
+
+
+  {
+    id: '1_1_4_06',
+    topicCode: '1.1.4',
+    title: 'Sum of Digits',
+    problemType: 'lab',
+    difficulty: 'easy',
+    order: 6,
+
+    problem: `
+Write a Python program to calculate the sum of the digits of a
+positive integer.
+`,
+
+    starterCode: `n = int(input())
+
+# Calculate digit sum
+`,
+
+    solution: `n = int(input())
+
+total = 0
+
+while n > 0:
+    total += n % 10
+    n //= 10
+
+print(total)`,
+
+    testCases: [
+      {
+        input: '12345',
+        expectedOutput: '15',
+      },
+      {
+        input: '908',
+        expectedOutput: '17',
+      },
+      {
+        input: '100',
+        expectedOutput: '1',
+      },
+    ],
+
+    visible: false,
+  },
+
+
+  {
+    id: '1_1_4_07',
+    topicCode: '1.1.4',
+    title: 'Generate Fibonacci Series',
+    problemType: 'placement',
+    difficulty: 'medium',
+    order: 7,
+
+    problem: `
+Write a Python program to generate the first N terms of the
+Fibonacci series.
+
+The series starts with:
+0 1 1 2 3 5 ...
+
+Input:
+One integer N.
+
+Output:
+Print the first N terms separated by spaces.
+`,
+
+    starterCode: `n = int(input())
+
+# Generate Fibonacci series
+`,
+
+    solution: `n = int(input())
+
+a = 0
+b = 1
+
+result = []
+
+for i in range(n):
+    result.append(str(a))
+    a, b = b, a + b
+
+print(" ".join(result))`,
+
+    testCases: [
+      {
+        input: '5',
+        expectedOutput: '0 1 1 2 3',
+      },
+      {
+        input: '8',
+        expectedOutput: '0 1 1 2 3 5 8 13',
+      },
+    ],
+
+    visible: false,
+  },
+
+
+  // =======================================================
+  // 1.1.5 FLOWCHARTS
+  // =======================================================
+
+  {
+    id: '1_1_5_01',
+    topicCode: '1.1.5',
+    title: 'Flowchart to Algorithm — Even or Odd',
+    problemType: 'lab',
+    difficulty: 'easy',
+    order: 1,
+
+    problem: `
+Consider the following logical flow:
+
+Start → Read number → Check number % 2 == 0
+→ Display Even if true → Display Odd if false → End
+
+Convert this flow into Python code.
+`,
+
+    starterCode: `n = int(input())
+
+# Convert the flowchart logic into Python
+`,
+
+    solution: `n = int(input())
+
+if n % 2 == 0:
+    print("Even")
+else:
+    print("Odd")`,
+
+    testCases: [
+      {
+        input: '8',
+        expectedOutput: 'Even',
+      },
+      {
+        input: '11',
+        expectedOutput: 'Odd',
+      },
+    ],
+
+    visible: false,
+  },
+
+
+  {
+    id: '1_1_5_02',
+    topicCode: '1.1.5',
+    title: 'Flowchart to Python — Positive, Negative or Zero',
+    problemType: 'placement',
+    difficulty: 'easy',
+    order: 2,
+
+    problem: `
+Convert the following decision logic into Python:
+
+If the number is greater than zero, display Positive.
+If the number is less than zero, display Negative.
+Otherwise display Zero.
+`,
+
+    starterCode: `n = int(input())
+
+# Implement the decision represented by the flowchart
+`,
+
+    solution: `n = int(input())
+
+if n > 0:
+    print("Positive")
+elif n < 0:
+    print("Negative")
+else:
+    print("Zero")`,
+
+    testCases: [
+      {
+        input: '10',
+        expectedOutput: 'Positive',
+      },
+      {
+        input: '-5',
+        expectedOutput: 'Negative',
+      },
+      {
+        input: '0',
+        expectedOutput: 'Zero',
+      },
+    ],
+
+    visible: false,
+  },
+
+
+  // =======================================================
+  // 1.1.6 PSEUDOCODE
+  // =======================================================
+
+  {
+    id: '1_1_6_01',
+    topicCode: '1.1.6',
+    title: 'Convert Pseudocode to Python — Largest Number',
+    problemType: 'placement',
+    difficulty: 'easy',
+    order: 1,
+
+    problem: `
+Convert the following pseudocode into Python:
+
+READ A
+READ B
+IF A > B THEN
+    PRINT A
+ELSE
+    PRINT B
+END IF
+`,
+
+    starterCode: `# Convert the pseudocode to Python
+
+`,
+
+    solution: `a = int(input())
+b = int(input())
+
+if a > b:
+    print(a)
+else:
+    print(b)`,
+
+    testCases: [
+      {
+        input: '15\\n10',
+        expectedOutput: '15',
+      },
+      {
+        input: '5\\n20',
+        expectedOutput: '20',
+      },
+    ],
+
+    visible: false,
+  },
+
+
+  {
+    id: '1_1_6_02',
+    topicCode: '1.1.6',
+    title: 'Convert Pseudocode to Python — Factorial',
+    problemType: 'lab',
+    difficulty: 'medium',
+    order: 2,
+
+    problem: `
+Convert the following pseudocode into Python:
+
+READ N
+SET FACTORIAL = 1
+
+FOR I = 1 TO N
+    FACTORIAL = FACTORIAL * I
+END FOR
+
+PRINT FACTORIAL
+`,
+
+    starterCode: `n = int(input())
+
+# Convert the pseudocode to Python
+`,
+
+    solution: `n = int(input())
+
+factorial = 1
+
+for i in range(1, n + 1):
+    factorial *= i
+
+print(factorial)`,
+
+    testCases: [
+      {
+        input: '5',
+        expectedOutput: '120',
+      },
+      {
+        input: '4',
+        expectedOutput: '24',
+      },
+      {
+        input: '0',
+        expectedOutput: '1',
+      },
+    ],
+
+    visible: false,
+  },
+
+
+  {
+    id: '1_1_6_03',
+    topicCode: '1.1.6',
+    title: 'Predict Output from Pseudocode',
+    problemType: 'placement',
+    difficulty: 'easy',
+    order: 3,
+
+    problem: `
+The following pseudocode is given:
+
+SET X = 5
+SET Y = 3
+SET Z = X * Y + 2
+PRINT Z
+
+Write a Python program that produces the same output.
+`,
+
+    starterCode: `# Implement the pseudocode
+
+`,
+
+    solution: `x = 5
+y = 3
+z = x * y + 2
+
+print(z)`,
+
+    testCases: [
+      {
+        input: '',
+        expectedOutput: '17',
+      },
+    ],
+
+    visible: false,
+  },
+
+
+  // =======================================================
+  // 1.1.7 ABSTRACTION / DECOMPOSITION / PATTERN / EFFICIENCY
+  // =======================================================
+
+  {
+    id: '1_1_7_01',
+    topicCode: '1.1.7',
+    title: 'Count the Number of Elements',
+    problemType: 'lab',
+    difficulty: 'easy',
+    order: 1,
+
+    problem: `
+Given N integers, count how many integers are provided.
+
+Input:
+The first line contains N.
+The second line contains N integers separated by spaces.
+
+Output:
+Print N.
+`,
+
+    starterCode: `n = int(input())
+numbers = list(map(int, input().split()))
+
+# Process the input
+`,
+
+    solution: `n = int(input())
+numbers = list(map(int, input().split()))
+
+print(len(numbers))`,
+
+    testCases: [
+      {
+        input: '5\\n10 20 30 40 50',
+        expectedOutput: '5',
+      },
+      {
+        input: '3\\n7 8 9',
+        expectedOutput: '3',
+      },
+    ],
+
+    visible: false,
+  },
+
+
+  {
+    id: '1_1_7_02',
+    topicCode: '1.1.7',
+    title: 'Linear Search',
+    problemType: 'placement',
+    difficulty: 'medium',
+    order: 2,
+
+    problem: `
+Given a list of integers and a target value, determine whether
+the target exists in the list.
+
+Input:
+First line: N
+Second line: N integers
+Third line: target
+
+Output:
+Print Found if the target exists; otherwise print Not Found.
+`,
+
+    starterCode: `n = int(input())
+numbers = list(map(int, input().split()))
+target = int(input())
+
+# Search for target
+`,
+
+    solution: `n = int(input())
+numbers = list(map(int, input().split()))
+target = int(input())
+
+found = False
+
+for number in numbers:
+    if number == target:
+        found = True
+        break
+
+if found:
+    print("Found")
+else:
+    print("Not Found")`,
+
+    testCases: [
+      {
+        input: '5\\n10 20 30 40 50\\n30',
+        expectedOutput: 'Found',
+      },
+      {
+        input: '5\\n10 20 30 40 50\\n35',
+        expectedOutput: 'Not Found',
+      },
+    ],
+
+    visible: false,
+  },
+
+
+  {
+    id: '1_1_7_03',
+    topicCode: '1.1.7',
+    title: 'Compare Linear and Nested Processing',
+    problemType: 'placement',
+    difficulty: 'medium',
+    order: 3,
+
+    problem: `
+Consider an array of N integers.
+
+Determine whether the array contains any duplicate value.
+
+A straightforward solution may compare every element with every
+other element.
+
+Write a Python program that detects whether a duplicate exists.
+
+Output:
+Print Duplicate if any value occurs more than once.
+Otherwise print Unique.
+`,
+
+    starterCode: `n = int(input())
+numbers = list(map(int, input().split()))
+
+# Detect duplicate values
+`,
+
+    solution: `n = int(input())
+numbers = list(map(int, input().split()))
+
+found = False
+
+for i in range(n):
+    for j in range(i + 1, n):
+        if numbers[i] == numbers[j]:
+            found = True
+            break
+
+    if found:
+        break
+
+if found:
+    print("Duplicate")
+else:
+    print("Unique")`,
+
+    testCases: [
+      {
+        input: '5\\n1 2 3 4 5',
+        expectedOutput: 'Unique',
+      },
+      {
+        input: '5\\n1 2 3 2 5',
+        expectedOutput: 'Duplicate',
+      },
+    ],
+
+    visible: false,
+  },
+
+];
+
+
+// =========================================================
+// GENERATE DETERMINISTIC DOCUMENT ID
+// =========================================================
+
+function makeDocumentId(problem) {
+  return `problem_${problem.id}`;
+}
+
+
+// =========================================================
+// SEED FIRESTORE
+// =========================================================
+
+async function seed() {
+
+  console.log(
+    `Preparing ${problems.length} problems...`
+  );
+
+  let batch = db.batch();
+  let count = 0;
+  let total = 0;
+
+  for (const problem of problems) {
+
+    const documentId =
+      makeDocumentId(problem);
+
+    const ref =
+      db.collection('topicSolutions')
+        .doc(documentId);
+
+    batch.set(
+      ref,
+      {
+        ...problem,
+
+        updatedAt:
+          admin.firestore.FieldValue.serverTimestamp(),
+      },
+      {
+        merge: true,
+      }
+    );
+
+    count++;
+    total++;
+
+    // Firestore batch limit
+    if (count === 400) {
+
+      await batch.commit();
+
+      console.log(
+        `Committed ${count} problems.`
+      );
+
+      batch = db.batch();
+      count = 0;
+
+    }
+
+  }
+
+  if (count > 0) {
+
+    await batch.commit();
+
+  }
+
+  console.log(
+    `DONE. ${total} problems seeded.`
+  );
+
+}
+
+
+seed()
+  .then(() => {
+    process.exit(0);
+  })
+  .catch((error) => {
+
+    console.error(
+      'SEED ERROR:',
+      error
+    );
+
+    process.exit(1);
+
+  });

@@ -1,0 +1,1326 @@
+'use client';
+
+import { useEffect, useMemo, useState } from 'react';
+
+import { auth, db } from '../../lib/firebase';
+import { getProfile } from '../../lib/user';
+
+import { onAuthStateChanged } from 'firebase/auth';
+
+
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  orderBy,
+  where,
+  setDoc,
+  serverTimestamp,
+} from 'firebase/firestore';
+
+
+import Header from '../../components/Header';
+import Sidebar from '../../components/Sidebar';
+import PythonRunner from '../../components/PythonRunner';
+import LabPractice from '../../components/LabPractice';
+
+// =====================================================
+// LESSON SECTION
+// =====================================================
+
+function LessonSection({ title, children, className = '' }) {
+
+  if (!children) return null;
+
+  return (
+    <section className={`lessonSection ${className}`}>
+
+      <h2 className="lessonSectionTitle">
+        {title}
+      </h2>
+
+      <div className="lessonSectionBody">
+        {children}
+      </div>
+
+    </section>
+  );
+}
+
+
+// =====================================================
+// MULTI-LINE TEXT
+// =====================================================
+
+function LessonText({ text }) {
+
+  if (!text) return null;
+
+  return (
+    <div className="lessonText">
+
+      {String(text)
+        .split('\n')
+        .map((line, index) => (
+
+          <p key={index}>
+            {line || '\u00A0'}
+          </p>
+
+        ))}
+
+    </div>
+  );
+}
+
+
+// =====================================================
+// BULLET LIST
+// =====================================================
+
+function LessonBullets({ text }) {
+
+  if (!text) return null;
+
+  const items = String(text)
+    .split('\n')
+    .map(item => item.trim())
+    .filter(Boolean);
+
+  return (
+    <ul className="lessonBullets">
+
+      {items.map((item, index) => (
+
+        <li key={index}>
+          {item}
+        </li>
+
+      ))}
+
+    </ul>
+  );
+}
+
+
+// =====================================================
+// LEARN PAGE
+// =====================================================
+
+export default function Learn() {
+
+  const [user, setUser] = useState(null);
+
+  const [profile, setProfile] = useState(null);
+
+  const [topics, setTopics] = useState([]);
+
+  const [sel, setSel] = useState(null);
+
+  const [loading, setLoading] = useState(true);
+
+  const [error, setError] = useState('');
+
+  const [labProblems, setLabProblems] = useState([]);
+
+  const [labProgress, setLabProgress] = useState({});
+
+  const [topicProgress, setTopicProgress] = useState({});
+
+  // ===================================================
+  // AUTHENTICATION
+  // ===================================================
+
+  useEffect(() => {
+
+    const unsubscribe = onAuthStateChanged(
+      auth,
+      (currentUser) => {
+
+        setUser(currentUser);
+        setLoading(false);
+
+      }
+    );
+
+    return () => unsubscribe();
+
+  }, []);
+
+
+  // ===================================================
+  // LOAD STUDENT PROFILE
+  // ===================================================
+
+  useEffect(() => {
+
+    if (!user) return;
+
+    let cancelled = false;
+
+    async function loadProfile() {
+
+      try {
+
+        const data = await getProfile(
+          user.uid
+        );
+
+        if (!cancelled) {
+
+          setProfile(data);
+
+        }
+
+      } catch (err) {
+
+        console.error(
+          'Profile loading error:',
+          err
+        );
+
+      }
+
+    }
+
+    loadProfile();
+
+    return () => {
+
+      cancelled = true;
+
+    };
+
+  }, [user]);
+
+
+  // ===================================================
+  // LOAD SYLLABUS
+  // ===================================================
+
+  useEffect(() => {
+
+    let cancelled = false;
+
+    async function loadTopics() {
+
+      try {
+
+        setError('');
+
+        const topicsQuery = query(
+          collection(db, 'topics'),
+          orderBy('order')
+        );
+
+        const snapshot = await getDocs(
+          topicsQuery
+        );
+
+        if (!cancelled) {
+
+          const data = snapshot.docs.map(
+            (document) => ({
+
+              id: document.id,
+
+              ...document.data(),
+
+            })
+          );
+
+          setTopics(data);
+
+        }
+
+      } catch (err) {
+
+        console.error(
+          'Syllabus loading error:',
+          err
+        );
+
+        if (!cancelled) {
+
+          setError(
+            err?.message ||
+            'Unable to load the syllabus.'
+          );
+
+        }
+
+      }
+
+    }
+
+    loadTopics();
+
+    return () => {
+
+      cancelled = true;
+
+    };
+
+  }, []);
+
+ 
+  // ===================================================
+  // CREATE SYLLABUS TREE
+  // ===================================================
+
+  const tree = useMemo(() => {
+
+    const units = {};
+
+
+    // -----------------------------------------------
+    // CREATE UNITS + TOP LEVEL TOPICS
+    // -----------------------------------------------
+
+    topics.forEach((topic) => {
+
+      if (!units[topic.unitCode]) {
+
+        units[topic.unitCode] = {
+
+          id: topic.unitCode,
+
+          code: topic.unitCode,
+
+          title: topic.unitTitle,
+
+          children: [],
+
+        };
+
+      }
+
+
+      if (!topic.parentId) {
+
+        units[
+          topic.unitCode
+        ].children.push({
+
+          ...topic,
+
+          children: [],
+
+        });
+
+      }
+
+    });
+
+
+    // -----------------------------------------------
+    // ADD SUBTOPICS
+    // -----------------------------------------------
+
+    topics.forEach((topic) => {
+
+      if (topic.parentId) {
+
+        const unit =
+          units[topic.unitCode];
+
+        if (!unit) return;
+
+
+        const parent =
+          unit.children.find(
+            (item) =>
+              item.id === topic.parentId
+          );
+
+
+        if (parent) {
+
+          parent.children.push(topic);
+
+        }
+
+      }
+
+    });
+
+
+    return Object.values(units);
+
+  }, [topics]);
+
+
+  // ===================================================
+  // CURRENT TOPIC
+  // ===================================================
+
+  const current =
+    topics.find(
+      (topic) => topic.id === sel
+    ) || topics[0];
+console.log(
+  'SELECTED:',
+  sel,
+  'CURRENT:',
+  current?.code,
+  current?.title
+);
+// ===================================================
+// LOAD STUDENT TOPIC PROGRESS
+// ===================================================
+
+useEffect(() => {
+
+  if (!user?.uid) {
+    setTopicProgress({});
+    return;
+  }
+
+  let cancelled = false;
+
+  async function loadTopicProgress() {
+
+    try {
+
+      const snapshot = await getDoc(
+        doc(
+          db,
+          'studentProgress',
+          user.uid
+        )
+      );
+
+      if (cancelled) return;
+
+      if (!snapshot.exists()) {
+        setTopicProgress({});
+        return;
+      }
+
+      const data = snapshot.data();
+
+      setTopicProgress(
+        data.topics || {}
+      );
+
+      console.log(
+        'TOPIC PROGRESS:',
+        data.topics || {}
+      );
+
+    } catch (error) {
+
+      console.error(
+        'Topic progress loading error:',
+        error
+      );
+
+      if (!cancelled) {
+        setTopicProgress({});
+      }
+
+    }
+
+  }
+
+  loadTopicProgress();
+
+  return () => {
+    cancelled = true;
+  };
+
+}, [user?.uid]);
+
+
+// ===================================================
+// MARK TOPIC AS COMPLETED
+// ===================================================
+
+async function markTopicCompleted(topic) {
+
+  if (!user?.uid || !topic?.id) {
+    return;
+  }
+
+  try {
+
+    const topicData = {
+      title:
+        topic.title || '',
+
+      code:
+        topic.code || '',
+
+      completed: true,
+
+      completedAt:
+        serverTimestamp(),
+    };
+
+    await setDoc(
+      doc(
+        db,
+        'studentProgress',
+        user.uid
+      ),
+      {
+        uid: user.uid,
+
+        topics: {
+          [topic.id]: topicData,
+        },
+
+        updatedAt:
+          serverTimestamp(),
+
+      },
+      {
+        merge: true,
+      }
+    );
+
+    setTopicProgress((previous) => ({
+      ...previous,
+
+      [topic.id]: topicData,
+    }));
+
+    console.log(
+      'TOPIC COMPLETED:',
+      topic.id
+    );
+
+  } catch (error) {
+
+    console.error(
+      'Topic completion save error:',
+      error
+    );
+
+  }
+
+}
+
+
+// ===================================================
+// LOAD STUDENT LAB PROGRESS
+// ===================================================
+
+useEffect(() => {
+
+  if (!user?.uid) {
+    setLabProgress({});
+    return;
+  }
+
+  let cancelled = false;
+
+  async function loadLabProgress() {
+
+    try {
+
+      const snapshot = await getDocs(
+        query(
+          collection(db, 'labSubmissions'),
+          where(
+            'uid',
+            '==',
+            user.uid
+          )
+        )
+      );
+
+      if (cancelled) return;
+
+      const progress = {};
+
+      snapshot.forEach((document) => {
+
+        const data = document.data();
+
+        if (!data.problemId) {
+          return;
+        }
+
+        progress[data.problemId] = {
+
+          passedTests:
+            data.passedTests || 0,
+
+          totalTests:
+            data.totalTests || 0,
+
+          score:
+            typeof data.score === 'number'
+              ? data.score
+              : 0,
+
+          completed:
+            data.completed === true,
+
+          lastTestedAt:
+            data.lastTestedAt || null,
+
+        };
+
+      });
+
+      setLabProgress(progress);
+
+      console.log(
+        'LAB PROGRESS:',
+        progress
+      );
+
+    } catch (error) {
+
+      console.error(
+        'Lab progress loading error:',
+        error
+      );
+
+      if (!cancelled) {
+        setLabProgress({});
+      }
+
+    }
+
+  }
+
+  loadLabProgress();
+
+  return () => {
+    cancelled = true;
+  };
+
+}, [user?.uid]);
+
+
+// ===================================================
+// LOAD LAB PROBLEMS + OFFICIAL SOLUTIONS
+// ===================================================
+
+useEffect(() => {
+
+  if (!current?.code) {
+    setLabProblems([]);
+    return;
+  }
+
+  let cancelled = false;
+
+  async function loadLabProblems() {
+
+    try {
+
+      // -----------------------------------------------
+      // LOAD LAB PROBLEMS
+      // -----------------------------------------------
+
+      const snapshot = await getDocs(
+        query(
+          collection(db, 'labProblems'),
+          where(
+            'topicCode',
+            '==',
+            current.code
+          )
+        )
+      );
+
+
+      if (cancelled) return;
+
+
+      // -----------------------------------------------
+      // LOAD EACH MATCHING OFFICIAL SOLUTION
+      // -----------------------------------------------
+
+      const data = await Promise.all(
+
+        snapshot.docs.map(
+          async (document) => {
+
+            const problem = {
+              id: document.id,
+              ...document.data(),
+            };
+
+
+            let solutionData = {};
+
+
+            try {
+
+              const solutionSnapshot =
+                await getDoc(
+                  doc(
+                    db,
+                    'topicSolutions',
+                    document.id
+                  )
+                );
+
+
+              if (solutionSnapshot.exists()) {
+
+                solutionData =
+                  solutionSnapshot.data();
+
+              }
+
+            } catch (solutionError) {
+
+              console.error(
+                'Solution loading error:',
+                document.id,
+                solutionError
+              );
+
+            }
+
+
+            return {
+              ...problem,
+
+              solution:
+                solutionData.solution || '',
+
+              visible:
+                solutionData.visible === true,
+
+            };
+
+          }
+        )
+
+      );
+
+
+      if (cancelled) return;
+
+
+      // -----------------------------------------------
+      // SORT BY ORDER
+      // -----------------------------------------------
+
+      data.sort(
+        (a, b) =>
+          (a.order || 0) -
+          (b.order || 0)
+      );
+
+
+      console.log(
+        'LAB PROBLEMS:',
+        data
+      );
+
+
+      setLabProblems(data);
+
+
+    } catch (err) {
+
+      console.error(
+        'Lab problem loading error:',
+        err
+      );
+
+
+      if (!cancelled) {
+
+        setLabProblems([]);
+
+      }
+
+    }
+
+  }
+
+
+  loadLabProblems();
+
+
+  return () => {
+
+    cancelled = true;
+
+  };
+
+
+}, [current?.code]);
+    
+  // ===================================================
+  // LOADING
+  // ===================================================
+
+  if (loading) {
+
+    return (
+
+      <main className="center">
+
+        <div className="card">
+
+          <h2>
+            Loading…
+          </h2>
+
+        </div>
+
+      </main>
+
+    );
+
+  }
+
+
+  // ===================================================
+  // NOT LOGGED IN
+  // ===================================================
+
+  if (!user) {
+
+    return (
+
+      <main className="center">
+
+        <div className="card">
+
+          <h2>
+            Please sign in first.
+          </h2>
+
+        </div>
+
+      </main>
+
+    );
+
+  }
+
+
+  // ===================================================
+  // PAGE
+  // ===================================================
+
+  return (
+
+    <>
+
+      <Header profile={profile} />
+
+
+      <button
+        className="menuBtn"
+        onClick={() => {
+          const sidebar =
+            document.querySelector('.sidebar');
+
+          if (sidebar) {
+            sidebar.classList.add('open');
+          }
+        }}
+      >
+        ☰ Syllabus
+      </button>
+
+
+      <div className="layout">
+
+
+        {/* =========================================
+            SIDEBAR
+        ========================================= */}
+
+        <Sidebar
+          tree={tree}
+          selected={current?.id}
+          onSelect={setSel}
+        />
+
+
+        {/* =========================================
+            LESSON CONTENT
+        ========================================= */}
+
+        <main className="content">
+
+
+          {/* ERROR */}
+
+          {error && (
+
+            <div className="error">
+
+              {error}
+
+            </div>
+
+          )}
+
+
+          {/* NO TOPICS */}
+
+          {!current && (
+
+            <div className="card">
+
+              <h2>
+                No syllabus topics are available yet.
+              </h2>
+
+              <p>
+                Please check the syllabus data in
+                Firebase.
+              </p>
+
+            </div>
+
+          )}
+
+
+          {/* =======================================
+              CURRENT LESSON
+          ======================================= */}
+
+          {current && (
+
+            <article className="lesson">
+
+
+              {/* -----------------------------------
+                  LESSON HEADER
+              ----------------------------------- */}
+
+              <header className="lessonHeader">
+
+                <div className="lessonCode">
+
+                  {current.code}
+
+                </div>
+
+                <h1>
+
+                  {current.title}
+
+                </h1>
+
+              </header>
+
+
+              {/* -----------------------------------
+                  INTRODUCTION
+              ----------------------------------- */}
+
+              <LessonSection title="Introduction">
+
+                <LessonText
+                  text={current.introduction}
+                />
+
+              </LessonSection>
+
+
+              {/* -----------------------------------
+                  LEARNING OBJECTIVES
+              ----------------------------------- */}
+
+              <LessonSection
+                title="Learning Objectives"
+              >
+
+                <LessonBullets
+                  text={current.learningObjectives}
+                />
+
+              </LessonSection>
+
+
+              {/* -----------------------------------
+                  DETAILED EXPLANATION
+              ----------------------------------- */}
+
+              <LessonSection
+                title="Detailed Explanation"
+              >
+
+                <LessonText
+                  text={current.explanation}
+                />
+
+              </LessonSection>
+
+
+              {/* -----------------------------------
+                  KEY POINTS
+              ----------------------------------- */}
+
+              <LessonSection title="Key Points">
+
+                <LessonBullets
+                  text={current.keyPoints}
+                />
+
+              </LessonSection>
+
+
+              {/* -----------------------------------
+                  EXAMPLE
+              ----------------------------------- */}
+
+              {current.exampleExplanation && (
+
+                <LessonSection
+                  title={
+                    current.exampleTitle ||
+                    'Example'
+                  }
+                  className="exampleSection"
+                >
+
+                  <LessonText
+                    text={current.exampleExplanation}
+                  />
+
+                </LessonSection>
+
+              )}
+
+
+              {/* -----------------------------------
+                  PYTHON EXAMPLE
+              ----------------------------------- */}
+
+              {current.codeExample && (
+
+                <LessonSection
+                  title="Python Example"
+                  className="codeSection"
+                >
+
+                  <PythonRunner
+                    initialCode={
+                      current.codeExample
+                    }
+                  />
+
+                </LessonSection>
+
+              )}
+
+
+              {/* -----------------------------------
+                  EXPECTED OUTPUT
+              ----------------------------------- */}
+
+              {current.expectedOutput && (
+
+                <LessonSection
+                  title="Expected Output"
+                  className="outputSection"
+                >
+
+                  <pre className="expectedOutput">
+                    {current.expectedOutput}
+                  </pre>
+
+                </LessonSection>
+
+              )}
+
+
+              {/* -----------------------------------
+                  PRACTICE
+              ----------------------------------- */}
+
+              {(current.practiceQuestion ||
+                current.practiceInstructions ||
+                current.practiceStarterCode) && (
+
+                <LessonSection
+                  title="Practice"
+                  className="practiceSection"
+                >
+
+
+                  {current.practiceQuestion && (
+
+                    <div className="practiceQuestion">
+
+                      <h3>
+                        Question
+                      </h3>
+
+                      <p>
+                        {current.practiceQuestion}
+                      </p>
+
+                    </div>
+
+                  )}
+
+
+                  {current.practiceInstructions && (
+
+                    <div className="practiceInstructions">
+
+                      <h3>
+                        Instructions
+                      </h3>
+
+                      <LessonText
+                        text={
+                          current.practiceInstructions
+                        }
+                      />
+
+                    </div>
+
+                  )}
+
+
+                  {current.practiceStarterCode && (
+
+                    <div className="practiceStarter">
+
+                      <h3>
+                        Practice Code
+                      </h3>
+
+                      <PythonRunner
+                        initialCode={
+                          current.practiceStarterCode
+                        }
+                      />
+
+                    </div>
+
+                  )}
+
+                </LessonSection>
+
+              )}
+
+
+
+{/* -----------------------------------
+    TOPIC COMPLETION
+----------------------------------- */}
+
+{current && (
+
+  <div className="topicCompletionCard">
+
+    <div>
+
+      <strong>
+        {topicProgress[current.id]?.completed
+          ? '✅ Topic Completed'
+          : '📘 Topic Progress'}
+      </strong>
+
+      <p>
+        {topicProgress[current.id]?.completed
+          ? 'You have completed this topic.'
+          : 'Finish studying this topic and mark it as completed.'}
+      </p>
+
+    </div>
+
+    {!topicProgress[current.id]?.completed && (
+
+      <button
+        type="button"
+        className="primary"
+        onClick={() =>
+          markTopicCompleted(current)
+        }
+      >
+        ✓ Mark Topic Complete
+      </button>
+
+    )}
+
+  </div>
+
+)}
+
+
+{/* -----------------------------------
+    LAB PRACTICE
+----------------------------------- */}
+
+{labProblems.length > 0 && (
+
+  <LessonSection
+    title="Lab Practice"
+    className="labPracticeSection"
+  >
+
+    <div className="labProblemList">
+
+      {labProblems.map((problem) => {
+
+        const progress =
+          labProgress[problem.id];
+
+        const hasProgress =
+          progress &&
+          progress.totalTests > 0;
+
+        const completed =
+          progress?.completed === true;
+
+        const score =
+          typeof progress?.score === 'number'
+            ? progress.score
+            : 0;
+
+        return (
+          <div
+            key={problem.id}
+            className="labProblemItem"
+          >
+
+            {/* LAB PROGRESS */}
+
+            <div className="labProgressCard">
+
+              <div className="labProgressHeader">
+
+                <strong>
+                  📊 Lab Progress
+                </strong>
+
+                <span
+                  className={
+                    completed
+                      ? 'labProgressStatus completed'
+                      : hasProgress
+                      ? 'labProgressStatus progress'
+                      : 'labProgressStatus notAttempted'
+                  }
+                >
+                  {completed
+                    ? '✅ Completed'
+                    : hasProgress
+                    ? '🟡 In Progress'
+                    : '⚪ Not Attempted'}
+                </span>
+
+              </div>
+
+
+              {hasProgress && (
+
+                <>
+
+                  <div className="labProgressStats">
+
+                    <span>
+                      {progress.passedTests} / {progress.totalTests} Tests Passed
+                    </span>
+
+                    <strong>
+                      {score}%
+                    </strong>
+
+                  </div>
+
+
+                  <div className="labProgressTrack">
+
+                    <div
+                      className="labProgressFill"
+                      style={{
+                        width: `${score}%`
+                      }}
+                    />
+
+                  </div>
+
+                </>
+
+              )}
+
+            </div>
+
+
+            {/* LAB PRACTICE */}
+
+            <LabPractice
+              user={user}
+              problem={problem}
+            />
+
+          </div>
+        );
+
+      })}
+
+    </div>
+
+  </LessonSection>
+
+)}
+
+
+
+              {/* -----------------------------------
+                  IMPORTANT NOTES
+              ----------------------------------- */}
+
+              {current.importantNotes && (
+
+                <LessonSection
+                  title="Important Notes"
+                  className="notesSection"
+                >
+
+                  <LessonText
+                    text={current.importantNotes}
+                  />
+
+                </LessonSection>
+
+              )}
+
+
+              {/* -----------------------------------
+                  SUMMARY
+              ----------------------------------- */}
+
+              {current.summary && (
+
+                <LessonSection
+                  title="Summary"
+                  className="summarySection"
+                >
+
+                  <LessonText
+                    text={current.summary}
+                  />
+
+                </LessonSection>
+
+              )}
+
+
+            </article>
+
+          )}
+
+        </main>
+
+      </div>
+
+    </>
+
+  );
+
+}

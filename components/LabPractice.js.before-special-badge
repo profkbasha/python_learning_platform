@@ -1,0 +1,1085 @@
+'use client';
+
+import { useEffect, useRef, useState } from 'react';
+
+import {
+  doc,
+  onSnapshot,
+  serverTimestamp,
+  setDoc,
+} from 'firebase/firestore';
+
+import { db } from '../lib/firebase';
+
+
+// =========================================================
+// LAB PRACTICE
+// =========================================================
+
+export default function LabPractice({
+  user,
+  problem,
+}) {
+
+const [code, setCode] = useState('');
+const [output, setOutput] = useState('');
+const [input, setInput] = useState('');
+const [saving, setSaving] = useState(false);
+const [sharedCode, setSharedCode] = useState(null);
+
+const [testResults, setTestResults] = useState([]);
+const [testing, setTesting] = useState(false);
+  const worker = useRef(null);
+
+  const saveTimer = useRef(null);
+
+
+  // =======================================================
+  // LOAD STUDENT'S EXISTING CODE
+  // =======================================================
+
+  useEffect(() => {
+
+    if (!user?.uid || !problem?.id) {
+      return;
+    }
+
+    const submissionId =
+      `${user.uid}_${problem.id}`;
+
+    const submissionRef =
+      doc(
+        db,
+        'labSubmissions',
+        submissionId
+      );
+
+    const unsubscribe =
+      onSnapshot(
+        submissionRef,
+        (snapshot) => {
+
+          if (!snapshot.exists()) {
+            return;
+          }
+
+          const data =
+            snapshot.data();
+
+          if (
+            typeof data.code === 'string'
+          ) {
+            setCode(data.code);
+          }
+
+        },
+        (error) => {
+
+          console.error(
+            'Student code loading error:',
+            error
+          );
+
+        }
+      );
+
+    return () => unsubscribe();
+
+  }, [
+    user?.uid,
+    problem?.id,
+  ]);
+
+
+  // =======================================================
+  // LISTEN FOR ADMIN-SHARED CODE
+  // =======================================================
+
+  useEffect(() => {
+
+    if (!problem?.id) {
+      setSharedCode(null);
+      return;
+    }
+
+    const sharedRef =
+      doc(
+        db,
+        'sharedLabCode',
+        problem.id
+      );
+
+    const unsubscribe =
+      onSnapshot(
+        sharedRef,
+        (snapshot) => {
+
+          if (!snapshot.exists()) {
+
+            setSharedCode(null);
+
+            return;
+          }
+
+          setSharedCode(
+            snapshot.data()
+          );
+
+        },
+        (error) => {
+
+          console.error(
+            'Shared code loading error:',
+            error
+          );
+
+        }
+      );
+
+    return () => unsubscribe();
+
+  }, [
+    problem?.id,
+  ]);
+
+
+  // =======================================================
+  // SAVE STUDENT CODE
+  // =======================================================
+
+  function saveCode(value) {
+
+    setCode(value);
+
+    if (
+      !user?.uid ||
+      !problem?.id
+    ) {
+      return;
+    }
+
+    if (saveTimer.current) {
+
+      clearTimeout(
+        saveTimer.current
+      );
+
+    }
+
+    setSaving(true);
+
+    saveTimer.current =
+      setTimeout(
+        async () => {
+
+          try {
+
+            const submissionId =
+              `${user.uid}_${problem.id}`;
+
+            await setDoc(
+              doc(
+                db,
+                'labSubmissions',
+                submissionId
+              ),
+              {
+                uid: user.uid,
+
+                problemId:
+                  problem.id,
+
+                topicCode:
+                  problem.topicCode || '',
+
+                title:
+                  problem.title || '',
+
+                code: value,
+
+                updatedAt:
+                  serverTimestamp(),
+              },
+              {
+                merge: true,
+              }
+            );
+
+          } catch (error) {
+
+            console.error(
+              'Code save error:',
+              error
+            );
+
+          } finally {
+
+            setSaving(false);
+
+          }
+
+        },
+        500
+      );
+
+  }
+
+function runPythonWithInput(inputValues) {
+
+  setTesting(false);
+
+  setOutput('Running…');
+
+  if (worker.current) {
+    worker.current.terminate();
+  }
+
+  worker.current = new Worker(
+    '/workers/python.worker.js'
+  );
+
+  worker.current.onmessage = (event) => {
+
+    setTesting(false);
+
+    setOutput(
+      event.data.output || ''
+    );
+
+  };
+
+  worker.current.onerror = (error) => {
+
+    setTesting(false);
+
+    setOutput(
+      'Python Worker Error:\n' +
+      (
+        error?.message ||
+        'Unable to run Python.'
+      )
+    );
+
+  };
+
+  worker.current.postMessage({
+    code,
+    input: inputValues || '',
+  });
+}
+  // =======================================================
+  // RUN PYTHON
+  // =======================================================
+
+function runCode() {
+
+  if (!code.trim()) {
+
+    setOutput('Please enter Python code.');
+
+    return;
+
+  }
+
+
+  // Find Python input() calls and extract their prompts.
+  const inputPattern =
+    /input\s*\(\s*(?:(["'])(.*?)\1)?\s*\)/g;
+
+  const prompts = [];
+
+  let match;
+
+  while (
+    (match = inputPattern.exec(code)) !== null
+  ) {
+
+    prompts.push(
+      match[2] || 'Enter input:'
+    );
+
+  }
+
+  // =====================================================
+  // NO INPUT REQUIRED
+  // =====================================================
+
+  if (prompts.length === 0) {
+
+    runPythonWithInput('');
+
+    return;
+
+  }
+
+
+  // =====================================================
+  // ASK FOR INPUT DYNAMICALLY
+  // =====================================================
+
+  const inputValues = [];
+
+  for (
+    let index = 0;
+    index < prompts.length;
+    index++
+  ) {
+
+    const value =
+      window.prompt(
+        prompts[index]
+      );
+
+    // User pressed Cancel
+    if (value === null) {
+
+      setOutput(
+        'Program execution cancelled.'
+      );
+
+      return;
+
+    }
+
+    inputValues.push(value);
+
+  }
+
+
+  // =====================================================
+  // RUN PYTHON WITH COLLECTED INPUT
+  // =====================================================
+
+  runPythonWithInput(
+    inputValues.join('\n')
+  );
+
+}
+
+  // =======================================================
+  // RUN PLACEMENT / LAB TEST CASES
+  // =======================================================
+
+  async function runTestCases() {
+
+    const testCases =
+      Array.isArray(problem?.testCases)
+        ? problem.testCases
+        : [];
+
+    if (!code.trim()) {
+
+      setOutput(
+        'Please enter Python code before running tests.'
+      );
+
+      return;
+
+    }
+
+    if (testCases.length === 0) {
+
+      setOutput(
+        'No test cases are available for this problem.'
+      );
+
+      setTestResults([]);
+
+      return;
+
+    }
+
+    setTesting(true);
+    setTestResults([]);
+    setOutput('Running test cases…');
+
+    const normalizeOutput = (value) =>
+      String(value ?? '')
+        .replace(/\r\n/g, '\n')
+        .trim();
+
+    const results = [];
+
+    for (
+      let index = 0;
+      index < testCases.length;
+      index++
+    ) {
+
+      const testCase =
+  testCases[index];
+
+const rawTestInput =
+  testCase?.input ?? '';
+
+const testInput =
+  String(rawTestInput)
+    .replace(/\\r\\n/g, '\n')
+    .replace(/\\n/g, '\n')
+    .replace(/\\r/g, '\n');
+      const expected =
+        normalizeOutput(
+          testCase?.expectedOutput ?? ''
+        );
+
+      try {
+
+        const actual =
+          await new Promise((resolve) => {
+
+            if (worker.current) {
+
+              worker.current.terminate();
+
+            }
+
+            const testWorker =
+              new Worker(
+                '/workers/python.worker.js'
+              );
+
+            worker.current =
+              testWorker;
+
+            testWorker.onmessage =
+              (event) => {
+
+                testWorker.terminate();
+
+                resolve(
+                  event.data?.output || ''
+                );
+
+              };
+
+            testWorker.onerror =
+              (error) => {
+
+                testWorker.terminate();
+
+                resolve(
+                  'Python Worker Error:\n' +
+                  (
+                    error?.message ||
+                    'Unable to run Python.'
+                  )
+                );
+
+              };
+
+            testWorker.postMessage({
+              code,
+              input: testInput,
+            });
+
+          });
+
+        const actualNormalized =
+          normalizeOutput(actual);
+
+        const passed =
+          actualNormalized === expected;
+
+results.push({
+  testCase: index + 1,
+  condition:
+    testCase?.condition ||
+    `Test condition ${index + 1}`,
+  input: testInput,
+  expectedOutput: expected,
+  actualOutput: actualNormalized,
+  passed,
+});
+      } catch (error) {
+
+results.push({
+  testCase: index + 1,
+  condition:
+    testCase?.condition ||
+    `Test condition ${index + 1}`,
+  input: testInput,
+  expectedOutput: expected,
+  actualOutput:
+    error?.message ||
+    String(error),
+  passed: false,
+});
+      }
+
+      setTestResults([
+        ...results,
+      ]);
+
+    }
+
+    setTesting(false);
+
+    const passedCount =
+      results.filter(
+        (result) => result.passed
+      ).length;
+
+    setOutput(
+      `${passedCount} / ${results.length} test cases passed.`
+    );
+
+  }
+
+
+  // =======================================================
+  // RESET
+  // =======================================================
+
+  function resetCode() {
+
+    const initial =
+      problem?.starterCode || '';
+
+    saveCode(initial);
+
+    setOutput('');
+
+  }
+
+
+  // =======================================================
+  // CLEANUP
+  // =======================================================
+
+  useEffect(() => {
+
+    return () => {
+
+      if (saveTimer.current) {
+
+        clearTimeout(
+          saveTimer.current
+        );
+
+      }
+
+      if (worker.current) {
+
+        worker.current.terminate();
+
+      }
+
+    };
+
+  }, []);
+
+
+  if (!problem) {
+    return null;
+  }
+
+
+  return (
+
+    <section className="labPractice">
+
+      <div className="labHeader">
+
+        <div>
+
+          <h2>
+            Lab Practice
+          </h2>
+
+          <h3>
+            {problem.title}
+          </h3>
+
+        </div>
+
+        <span className="saveStatus">
+
+          {saving
+            ? 'Saving…'
+            : 'Saved'}
+
+        </span>
+
+      </div>
+
+
+      {problem.problem && (
+
+        <div className="labProblem">
+
+          <h3>
+            Problem
+          </h3>
+
+          <div
+            dangerouslySetInnerHTML={{
+              __html:
+                problem.problem,
+            }}
+          />
+
+        </div>
+
+      )}
+
+
+      <div className="labEditor">
+
+        <textarea
+          className="simpleEditor"
+          value={code}
+          onChange={(e) =>
+            saveCode(
+              e.target.value
+            )
+          }
+          spellCheck={false}
+          placeholder="Write your Python code here..."
+        />
+
+
+      </div>
+
+      {/* =================================================
+          PROGRAM INPUT
+      ================================================= */}
+
+      <div className="programInput">
+
+        <h3>
+          Program Input
+        </h3>
+
+        <textarea
+          className="simpleEditor"
+          value={input}
+          onChange={(e) =>
+            setInput(e.target.value)
+          }
+          spellCheck={false}
+          placeholder="Enter program input here..."
+          rows={5}
+        />
+
+      </div>
+
+
+      {/* =================================================
+          EXECUTION CONTROLS
+      ================================================= */}
+
+      <div className="labActions">
+
+        <button
+          type="button"
+          onClick={() =>
+            runPythonWithInput(input)
+          }
+          disabled={testing}
+        >
+          ▶ Run Python
+        </button>
+
+
+        {Array.isArray(problem.testCases) &&
+          problem.testCases.length > 0 && (
+
+            <button
+              type="button"
+              className="secondary"
+              onClick={runTestCases}
+              disabled={testing}
+            >
+              {testing
+                ? '🧪 Running Tests…'
+                : '🧪 Run Test Cases'}
+            </button>
+
+          )}
+
+
+        <button
+          type="button"
+          className="secondary"
+          onClick={resetCode}
+          disabled={testing}
+        >
+          ↻ Reset
+        </button>
+
+      </div>
+
+
+      {/* =================================================
+          PROGRAM OUTPUT
+      ================================================= */}
+
+      <div className="programOutput">
+
+        <h3>
+          Output
+        </h3>
+
+        <pre className="output">
+          {output || 'Program output will appear here.'}
+        </pre>
+
+      </div>
+
+
+      {/* =================================================
+          TEST CASES
+      ================================================= */}
+
+      {Array.isArray(problem.testCases) &&
+        problem.testCases.length > 0 && (
+
+        <div className="testCasePanel">
+
+          <div className="testCaseHeader">
+
+            <div>
+              <h3>🧪 Test Cases</h3>
+
+              <p>
+                These test cases check different conditions
+                of your program.
+              </p>
+            </div>
+
+            <span className="testCaseCount">
+              {problem.testCases.length} Tests
+            </span>
+
+          </div>
+
+
+          <div className="testCaseGrid">
+
+            {problem.testCases.map((testCase, index) => {
+
+              const result =
+                testResults.find(
+                  item =>
+                    item.testCase === index + 1
+                );
+
+              return (
+
+                <div
+                  key={index}
+                  className={
+                    result
+                      ? result.passed
+                        ? 'testCaseCard passed'
+                        : 'testCaseCard failed'
+                      : 'testCaseCard'
+                  }
+                >
+
+                  {/* TEST CASE HEADER */}
+
+                  <div className="testCaseCardHeader">
+
+                    <div className="testCaseTitle">
+
+                      <strong>
+                        TEST CASE {index + 1}
+                      </strong>
+
+                      <span
+                        className={`testCaseType ${
+                          testCase?.type || 'basic'
+                        }`}
+                      >
+                        {testCase?.type === 'boundary'
+                          ? '🟡 BOUNDARY'
+                          : testCase?.type === 'edge'
+                          ? '🔵 EDGE'
+                          : '🟢 BASIC'}
+                      </span>
+
+                    </div>
+
+                    <span>
+
+                      {result
+                        ? result.passed
+                          ? '✅ PASSED'
+                          : '❌ FAILED'
+                        : '⚪ PENDING'}
+
+                    </span>
+
+                  </div>
+
+
+                  {/* INPUT */}
+
+                  <div className="testCaseSection">
+
+                    <div className="testCaseLabel">
+                      📥 Input
+                    </div>
+
+                    <pre className="testCaseInput">
+                      {String(
+                        testCase?.input ?? ''
+                      ).replace(
+                        /\\n/g,
+                        '\n'
+                      )}
+                    </pre>
+
+                  </div>
+
+
+                  {/* CONDITION */}
+
+                  <div className="testCaseSection">
+
+                    <div className="testCaseLabel">
+                      🎯 Condition
+                    </div>
+
+                    <p className="testCaseCondition">
+
+                      {testCase?.condition ||
+                        `Test condition ${index + 1}`}
+
+                    </p>
+
+                  </div>
+
+
+                  {/* BEFORE TEST */}
+
+                  {!result && (
+
+                    <div className="testCaseHidden">
+
+                      <strong>
+                        🔒 Expected Output
+                      </strong>
+
+                      <small>
+                        Hidden until you run the test cases.
+                      </small>
+
+                    </div>
+
+                  )}
+
+
+                  {/* AFTER TEST */}
+
+                  {result && (
+
+                    <div className="testCaseResult">
+
+                      <div className="testResultBox">
+
+                        <span>
+                          Expected Output
+                        </span>
+
+                        <pre>
+                          {result.expectedOutput}
+                        </pre>
+
+                      </div>
+
+
+                      <div className="testResultBox">
+
+                        <span>
+                          Your Output
+                        </span>
+
+                        <pre>
+                          {result.actualOutput}
+                        </pre>
+
+                      </div>
+
+                    </div>
+
+                  )}
+
+
+                  {/* RESULT MESSAGE */}
+
+                  {result && (
+
+                    <div
+                      className={
+                        result.passed
+                          ? 'testResultMessage success'
+                          : 'testResultMessage error'
+                      }
+                    >
+
+                      {result.passed
+                        ? '✓ Correct! Your program handled this condition successfully.'
+                        : '✗ This test case failed. Compare the expected output with your output.'}
+
+                    </div>
+
+                  )}
+
+                </div>
+
+              );
+
+            })}
+
+          </div>
+
+        </div>
+
+      )}
+
+
+      {/* =================================================
+          TEST SUMMARY
+      ================================================= */}
+
+      {testResults.length > 0 && (
+
+        <div className="testSummaryCard">
+
+          {(() => {
+
+            const passed =
+              testResults.filter(
+                result => result.passed
+              ).length;
+
+            const total =
+              testResults.length;
+
+            const percentage =
+              Math.round(
+                (passed / total) * 100
+              );
+
+            return (
+
+              <>
+
+                <div className="testSummaryHeader">
+
+                  <div>
+
+                    <h3>
+                      🏆 Test Result
+                    </h3>
+
+                    <p>
+                      {passed} of {total} test cases passed
+                    </p>
+
+                  </div>
+
+
+                  <div className="testPercentage">
+
+                    {percentage}%
+
+                  </div>
+
+                </div>
+
+
+                <div className="testProgress">
+
+                  <div
+                    className="testProgressBar"
+                    style={{
+                      width:
+                        `${percentage}%`
+                    }}
+                  />
+
+                </div>
+
+
+                <div className="testSummaryMessage">
+
+                  {percentage === 100
+                    ? '🎉 Excellent! All test cases passed.'
+                    : percentage >= 70
+                    ? '👍 Good progress. Review the failed test cases.'
+                    : '💡 Keep practicing. Carefully review the conditions and your logic.'}
+
+                </div>
+
+              </>
+
+            );
+
+          })()}
+
+        </div>
+
+      )}
+
+      {/* =================================================
+          OFFICIAL SOLUTION
+      ================================================= */}
+
+      {problem.visible && (
+
+        <details className="officialSolution">
+
+          <summary>
+            📘 Official Solution
+          </summary>
+
+          <div className="solutionBox">
+
+            {problem.solution && (
+
+              <pre>
+                {problem.solution}
+              </pre>
+
+            )}
+
+          </div>
+
+        </details>
+
+      )}
+
+
+      {/* =================================================
+          ADMIN-SHARED STUDENT CODE
+      ================================================= */}
+
+      {sharedCode && (
+
+        <section className="sharedStudentCode">
+
+          <h3>
+            ⭐ Shared Student Solution
+          </h3>
+
+          <p className="muted">
+            A solution selected by the faculty
+            is being shared with the class.
+          </p>
+
+          <pre>
+            {sharedCode.code || ''}
+          </pre>
+
+        </section>
+
+      )}
+
+    </section>
+
+  );
+
+}

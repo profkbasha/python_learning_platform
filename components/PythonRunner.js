@@ -1,0 +1,3 @@
+'use client';
+import {useRef,useState} from 'react';
+export default function PythonRunner({initialCode=''}){const [code,setCode]=useState(initialCode),[out,setOut]=useState(''),[busy,setBusy]=useState(false);const worker=useRef(null);function run(){setBusy(true);setOut('Running…');if(worker.current)worker.current.terminate();worker.current=new Worker('/workers/python.worker.js');worker.current.onmessage=e=>{setBusy(false);setOut(e.data.output)};worker.current.postMessage({code});}return <div className="practice"><textarea className="simpleEditor" value={code} onChange={e=>setCode(e.target.value)} spellCheck={false}/><button onClick={run} disabled={busy}>{busy?'Running…':'▶ Run Python'}</button><pre className="output">{out}</pre></div>}

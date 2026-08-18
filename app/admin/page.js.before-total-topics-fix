@@ -1,0 +1,2629 @@
+'use client';
+
+import { useEffect, useMemo, useState } from 'react';
+
+import { auth, db } from '../../lib/firebase';
+
+import {
+  onAuthStateChanged,
+  getIdTokenResult,
+} from 'firebase/auth';
+
+import {
+  collection,
+  getDocs,
+  getDoc,
+  doc,
+  setDoc,
+  deleteDoc,
+  serverTimestamp,
+  query,
+  orderBy,
+  where,
+} from 'firebase/firestore';
+
+import Header from '../../components/Header';
+import Editor from '../../components/Editor';
+
+
+const emptyForm = {
+  unitCode: '',
+  unitTitle: '',
+  code: '',
+  title: '',
+  parentId: '',
+  order: 0,
+
+  // Lesson
+  introduction: '',
+  learningObjectives: '',
+  explanation: '',
+  keyPoints: '',
+
+  // Example
+  exampleTitle: '',
+  exampleExplanation: '',
+  codeExample: '',
+  expectedOutput: '',
+
+  // Practice
+  practiceQuestion: '',
+  practiceInstructions: '',
+  practiceStarterCode: '',
+
+  // Additional
+  importantNotes: '',
+  summary: '',
+};
+
+
+export default function Admin() {
+
+  const [user, setUser] = useState(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [checkingAuth, setCheckingAuth] = useState(true);
+
+  const [topics, setTopics] = useState([]);
+  const [labProblems, setLabProblems] = useState([]);
+  const [loadingLabs, setLoadingLabs] = useState(false);
+
+  // =========================================================
+  // STUDENT PROGRESS
+  // =========================================================
+
+  const [studentProgress, setStudentProgress] = useState([]);
+  const [loadingStudentProgress, setLoadingStudentProgress] = useState(false);
+
+  // =========================================================
+  // SELECTED STUDENT FOR UNIT-WISE PROGRESS
+  // =========================================================
+
+  const [selectedProgressStudent, setSelectedProgressStudent] =
+    useState(null);
+  const [editingSolution, setEditingSolution] = useState(null);
+  const [solutionCode, setSolutionCode] = useState('');
+  const [solutionTitle, setSolutionTitle] = useState('');
+  const [solutionProblem, setSolutionProblem] = useState('');
+const [problemType, setProblemType] =
+  useState('lab');
+
+const [problemDifficulty, setProblemDifficulty] =
+  useState('easy');
+
+
+
+
+
+
+  const [editing, setEditing] = useState(null);
+  const [form, setForm] = useState(emptyForm);
+
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
+  const [loadingTopics, setLoadingTopics] = useState(false);
+  const [preview, setPreview] = useState(false);
+
+
+  // =========================================================
+  // AUTHENTICATION
+  // =========================================================
+
+  useEffect(() => {
+
+    const unsubscribe = onAuthStateChanged(
+      auth,
+      async (currentUser) => {
+
+        setCheckingAuth(true);
+        setError('');
+        setSuccess('');
+
+        setUser(currentUser);
+
+        if (!currentUser) {
+          setIsAdmin(false);
+          setCheckingAuth(false);
+          return;
+        }
+
+        try {
+
+          const tokenResult =
+            await getIdTokenResult(
+              currentUser,
+              true
+            );
+
+          const adminClaim =
+            tokenResult.claims.admin === true;
+
+          setIsAdmin(adminClaim);
+
+          if (!adminClaim) {
+
+            setError(
+              'Your Google account is signed in, but it does not have Admin permission.'
+            );
+
+            setCheckingAuth(false);
+            return;
+          }
+
+          await loadTopics();
+
+        } catch (err) {
+
+          console.error(
+            'Admin authentication error:',
+            err
+          );
+
+          setIsAdmin(false);
+
+          setError(
+            err?.message ||
+            'Unable to verify administrator access.'
+          );
+
+        }
+
+        setCheckingAuth(false);
+      }
+    );
+
+    return () => unsubscribe();
+
+  }, []);
+
+
+  // =========================================================
+  // LOAD TOPICS
+  // =========================================================
+
+  async function loadTopics() {
+
+    try {
+
+      setLoadingTopics(true);
+      setError('');
+
+      const topicsQuery = query(
+        collection(db, 'topics'),
+        orderBy('order')
+      );
+
+      const snapshot =
+        await getDocs(topicsQuery);
+
+      const data =
+        snapshot.docs.map(document => ({
+          id: document.id,
+          ...document.data(),
+        }));
+
+      setTopics(data);
+
+    } catch (err) {
+
+      console.error(
+        'Unable to load topics:',
+        err
+      );
+
+      setError(
+        err?.message ||
+        'Unable to load topics from Firestore.'
+      );
+
+    } finally {
+
+      setLoadingTopics(false);
+
+    }
+
+  }
+
+// =========================================================
+// LOAD LAB PROBLEMS / SOLUTIONS
+// =========================================================
+
+async function loadLabProblems(topicCode) {
+  if (!topicCode) {
+    setLabProblems([]);
+    return;
+  }
+
+  try {
+    setLoadingLabs(true);
+    setError('');
+
+    const q = query(
+      collection(db, 'topicSolutions'),
+      where('topicCode', '==', topicCode)
+    );
+
+    const snapshot = await getDocs(q);
+
+    const data = snapshot.docs
+  .map((document) => ({
+    id: document.id,
+    ...document.data(),
+
+    problemType:
+      document.data().problemType || 'lab',
+
+    difficulty:
+      document.data().difficulty || 'easy',
+
+    testCases:
+      Array.isArray(document.data().testCases)
+        ? document.data().testCases
+        : [],
+  }))
+  .sort(
+    (a, b) =>
+      (a.order || 0) -
+      (b.order || 0)
+  );
+    setLabProblems(data);
+  } catch (err) {
+    console.error('Unable to load lab problems:', err);
+
+    setError(
+      err?.message ||
+      'Unable to load lab problems.'
+    );
+
+    setLabProblems([]);
+  } finally {
+    setLoadingLabs(false);
+  }
+}
+
+
+
+// =========================================================
+// SAVE OFFICIAL SOLUTION
+// =========================================================
+
+async function saveSolution(problem) {
+  try {
+    setError('');
+    setSuccess('');
+   await setDoc(
+  doc(db, 'topicSolutions', problem.id),
+  {
+    title: solutionTitle,
+    problem: solutionProblem,
+    solution: solutionCode,
+
+    problemType:
+      problemType || 'lab',
+
+    difficulty:
+      problemDifficulty || 'easy',
+
+    updatedAt: serverTimestamp(),
+  },
+      {
+        merge: true,
+      }
+    );
+
+    setSuccess(
+      `${problem.title} solution saved successfully.`
+    );
+
+    setEditingSolution(null);
+
+    await loadLabProblems(problem.topicCode);
+
+  } catch (err) {
+    console.error(
+      'Save solution error:',
+      err
+    );
+
+    setError(
+      err?.message ||
+      'Unable to save the solution.'
+    );
+  }
+}
+
+// =========================================================
+// EDIT OFFICIAL SOLUTION
+// =========================================================
+
+function editSolution(problem) {
+
+  setError('');
+  setSuccess('');
+
+  setEditingSolution(problem.id);
+
+  setSolutionTitle(
+    problem.title || ''
+  );
+
+  setSolutionProblem(
+    problem.problem || ''
+  );
+
+  setSolutionCode(
+    problem.solution || ''
+  );
+
+  setProblemType(
+    problem.problemType || 'lab'
+  );
+
+  setProblemDifficulty(
+    problem.difficulty || 'easy'
+  );
+}
+
+// =========================================================
+// TOGGLE SOLUTION VISIBILITY
+// =========================================================
+
+async function toggleSolution(problem) {
+
+  try {
+
+    setError('');
+    setSuccess('');
+
+    const newVisibility =
+      !Boolean(problem.visible);
+
+    await setDoc(
+      doc(
+        db,
+        'topicSolutions',
+        problem.id
+      ),
+      {
+        visible: newVisibility,
+
+        updatedAt:
+          serverTimestamp(),
+
+      },
+      {
+        merge: true,
+      }
+    );
+
+    setSuccess(
+      newVisibility
+        ? `${problem.title}: solution is now visible to students.`
+        : `${problem.title}: solution is now hidden from students.`
+    );
+
+    await loadLabProblems(
+      problem.topicCode
+    );
+
+  } catch (err) {
+
+    console.error(
+      'Toggle solution error:',
+      err
+    );
+
+    setError(
+      err?.message ||
+      'Unable to change solution visibility.'
+    );
+
+  }
+
+}
+
+
+
+
+
+
+  // =========================================================
+  // FORM HELPER
+  // =========================================================
+
+  function updateForm(field, value) {
+
+    setForm(previous => ({
+      ...previous,
+      [field]: value,
+    }));
+
+  }
+
+
+  // =========================================================
+  // SAVE TOPIC
+  // =========================================================
+
+  async function save(e) {
+
+    e.preventDefault();
+
+    setError('');
+    setSuccess('');
+
+    try {
+
+      const data = {
+
+        unitCode: form.unitCode || '',
+        unitTitle: form.unitTitle || '',
+
+        code: form.code || '',
+        title: form.title || '',
+
+        parentId: form.parentId || '',
+
+        order: Number(form.order || 0),
+
+        // =================================================
+        // LESSON CONTENT
+        // =================================================
+
+        introduction:
+          form.introduction || '',
+
+        learningObjectives:
+          form.learningObjectives || '',
+
+        explanation:
+          form.explanation || '',
+
+        keyPoints:
+          form.keyPoints || '',
+
+        // =================================================
+        // EXAMPLE
+        // =================================================
+
+        exampleTitle:
+          form.exampleTitle || '',
+
+        exampleExplanation:
+          form.exampleExplanation || '',
+
+        codeExample:
+          form.codeExample || '',
+
+        expectedOutput:
+          form.expectedOutput || '',
+
+        // =================================================
+        // PRACTICE
+        // =================================================
+
+        practiceQuestion:
+          form.practiceQuestion || '',
+
+        practiceInstructions:
+          form.practiceInstructions || '',
+
+        practiceStarterCode:
+          form.practiceStarterCode || '',
+
+        // =================================================
+        // ADDITIONAL
+        // =================================================
+
+        importantNotes:
+          form.importantNotes || '',
+
+        summary:
+          form.summary || '',
+
+        updatedAt:
+          serverTimestamp(),
+      };
+
+
+      if (editing) {
+
+        await setDoc(
+          doc(db, 'topics', editing),
+          data,
+          { merge: true }
+        );
+
+      } else {
+
+        await setDoc(
+          doc(db, 'topics', form.code),
+          {
+            ...data,
+            createdAt:
+              serverTimestamp(),
+          }
+        );
+
+      }
+
+
+      setSuccess(
+        `${form.code} ${form.title} saved successfully.`
+      );
+
+      setEditing(null);
+      setForm(emptyForm);
+
+      await loadTopics();
+
+    } catch (err) {
+
+      console.error(
+        'Save topic error:',
+        err
+      );
+
+      setError(
+        err?.message ||
+        'Unable to save the topic.'
+      );
+
+    }
+
+  }
+
+
+  // =========================================================
+  // DELETE TOPIC
+  // =========================================================
+
+  async function remove(id) {
+
+    const confirmed =
+      window.confirm(
+        'Delete this topic? This cannot be undone.'
+      );
+
+    if (!confirmed) return;
+
+    try {
+
+      setError('');
+      setSuccess('');
+
+      await deleteDoc(
+        doc(db, 'topics', id)
+      );
+
+      setSuccess(
+        'Topic deleted successfully.'
+      );
+
+      await loadTopics();
+
+    } catch (err) {
+
+      console.error(
+        'Delete topic error:',
+        err
+      );
+
+      setError(
+        err?.message ||
+        'Unable to delete the topic.'
+      );
+
+    }
+
+  }
+
+
+  // =========================================================
+  // EDIT TOPIC
+  // =========================================================
+
+  function editTopic(topic) {
+
+    setEditing(topic.id);
+
+    setPreview(false);
+
+    loadLabProblems(topic.code); 
+
+    setForm({
+
+      unitCode:
+        topic.unitCode || '',
+
+      unitTitle:
+        topic.unitTitle || '',
+
+      code:
+        topic.code || '',
+
+      title:
+        topic.title || '',
+
+      parentId:
+        topic.parentId || '',
+
+      order:
+        topic.order || 0,
+
+      introduction:
+        topic.introduction || '',
+
+      learningObjectives:
+        topic.learningObjectives || '',
+
+      explanation:
+        topic.explanation || '',
+
+      keyPoints:
+        topic.keyPoints || '',
+
+      exampleTitle:
+        topic.exampleTitle || '',
+
+      exampleExplanation:
+        topic.exampleExplanation || '',
+
+      codeExample:
+        topic.codeExample || '',
+
+      expectedOutput:
+        topic.expectedOutput || '',
+
+      practiceQuestion:
+        topic.practiceQuestion || '',
+
+      practiceInstructions:
+        topic.practiceInstructions || '',
+
+      practiceStarterCode:
+        topic.practiceStarterCode || '',
+
+      importantNotes:
+        topic.importantNotes || '',
+
+      summary:
+        topic.summary || '',
+    });
+
+    window.scrollTo({
+      top: 0,
+      behavior: 'smooth',
+    });
+
+  }
+
+
+
+  // =========================================================
+  // LOAD STUDENT PROGRESS
+  // =========================================================
+
+  useEffect(() => {
+
+    if (!user?.uid || !isAdmin) {
+      setStudentProgress([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadStudentProgress() {
+
+      setLoadingStudentProgress(true);
+
+      try {
+
+        // ---------------------------------------------------------
+        // LOAD ALL REGISTERED USERS
+        // ---------------------------------------------------------
+
+        const usersSnapshot = await getDocs(
+          collection(db, 'users')
+        );
+
+        if (cancelled) return;
+
+
+        // ---------------------------------------------------------
+        // LOAD ALL RECORDED PROGRESS
+        // ---------------------------------------------------------
+
+        const progressSnapshot = await getDocs(
+          collection(db, 'studentProgress')
+        );
+
+        if (cancelled) return;
+
+
+        const progressByUid = {};
+
+        progressSnapshot.docs.forEach((document) => {
+
+          const data = document.data();
+
+          const uid =
+            data.uid || document.id;
+
+          progressByUid[uid] = data;
+
+        });
+
+
+        // ---------------------------------------------------------
+        // BUILD STUDENT LIST
+        // ---------------------------------------------------------
+
+        const progress = usersSnapshot.docs
+          .map((document) => {
+
+            const profile =
+              document.data();
+
+            const uid =
+              profile.uid || document.id;
+
+
+            // Exclude administrator accounts.
+            if (
+              profile.admin === true ||
+              profile.rollNumber === 'admin'
+            ) {
+              return null;
+            }
+
+
+            const progressData =
+              progressByUid[uid] || {};
+
+            const topics =
+              progressData.topics || {};
+
+            const entries =
+              Object.entries(topics);
+
+
+            const completed =
+              entries.filter(
+                ([, topic]) =>
+                  topic?.completed === true
+              ).length;
+
+
+            return {
+
+              uid,
+
+              name:
+                profile.name ||
+                profile.displayName ||
+                profile.fullName ||
+                'Student',
+
+              email:
+                profile.email ||
+                '',
+
+              rollNumber:
+                profile.rollNumber ||
+                '',
+
+              topics:
+                entries.length,
+
+              topicProgress:
+                topics,
+
+              completed,
+
+              remaining:
+                Math.max(
+                  entries.length - completed,
+                  0
+                ),
+
+              percentage:
+                entries.length > 0
+                  ? Math.round(
+                      (completed / entries.length) * 100
+                    )
+                  : 0,
+
+            };
+
+          })
+          .filter(Boolean);
+
+
+        // ---------------------------------------------------------
+        // SORT BY STUDENT NAME
+        // ---------------------------------------------------------
+
+        progress.sort(
+          (a, b) =>
+            a.name.localeCompare(
+              b.name
+            )
+        );
+
+
+        setStudentProgress(progress);
+
+        console.log(
+          'ADMIN STUDENT PROGRESS:',
+          progress
+        );
+
+      } catch (error) {
+
+        console.error(
+          'Student progress loading error:',
+          error
+        );
+
+        if (!cancelled) {
+          setStudentProgress([]);
+        }
+
+      } finally {
+
+        if (!cancelled) {
+          setLoadingStudentProgress(false);
+        }
+
+      }
+
+    }
+
+    loadStudentProgress();
+
+    return () => {
+      cancelled = true;
+    };
+
+  }, [user?.uid, isAdmin]);
+
+
+  // =========================================================
+  // ADMIN DASHBOARD
+  // =========================================================
+
+  // =========================================================
+  // STUDENT PROGRESS SUMMARY
+  // =========================================================
+
+  const studentProgressSummary = useMemo(() => {
+
+    const totalStudents =
+      studentProgress.length;
+
+    const completedStudents =
+      studentProgress.filter(
+        student =>
+          student.percentage === 100
+      ).length;
+
+    const inProgressStudents =
+      studentProgress.filter(
+        student =>
+          student.percentage > 0 &&
+          student.percentage < 100
+      ).length;
+
+    const notStartedStudents =
+      studentProgress.filter(
+        student =>
+          student.percentage === 0
+      ).length;
+
+    const averageProgress =
+      totalStudents > 0
+        ? Math.round(
+            studentProgress.reduce(
+              (sum, student) =>
+                sum + student.percentage,
+              0
+            ) / totalStudents
+          )
+        : 0;
+
+    return {
+      totalStudents,
+      completedStudents,
+      inProgressStudents,
+      notStartedStudents,
+      averageProgress,
+    };
+
+  }, [studentProgress]);
+
+
+
+  // =========================================================
+  // NEW TOPIC
+  // =========================================================
+
+  function newTopic() {
+  setEditing(null);
+  setPreview(false);
+  setForm(emptyForm);
+
+  setLabProblems([]);
+  setEditingSolution(null);
+
+  window.scrollTo({
+    top: 0,
+    behavior: 'smooth',
+  });
+}
+
+  // =========================================================
+  // CANCEL
+  // =========================================================
+
+ function cancelEdit() {
+  setEditing(null);
+  setPreview(false);
+  setForm(emptyForm);
+
+  setLabProblems([]);
+  setEditingSolution(null);
+}
+
+  // =========================================================
+  // AUTH CHECK
+  // =========================================================
+
+  if (checkingAuth) {
+
+    return (
+
+      <main className="center">
+
+        <div className="card">
+
+          <h2>
+            Checking administrator access…
+          </h2>
+
+          <p className="muted">
+            Please wait.
+          </p>
+
+        </div>
+
+      </main>
+
+    );
+
+  }
+
+
+  if (!user) {
+
+    return (
+
+      <main className="center">
+
+        <div className="card">
+
+          <h2>
+            Sign in first.
+          </h2>
+
+          <p className="muted">
+            Please sign in with your Google account.
+          </p>
+
+        </div>
+
+      </main>
+
+    );
+
+  }
+
+
+  if (!isAdmin) {
+
+    return (
+
+      <main className="center">
+
+        <div className="card">
+
+          <h2>
+            Administrator access required
+          </h2>
+
+          <p className="muted">
+
+            {error ||
+              'Your account does not have administrator permission.'}
+
+          </p>
+
+          <p className="muted">
+
+            Signed in as:
+            <br />
+
+            <b>
+              {user.email}
+            </b>
+
+          </p>
+
+        </div>
+
+      </main>
+
+    );
+
+  }
+
+
+
+  return (
+
+    <>
+
+      <Header
+        profile={{
+          admin: true,
+          email: user.email,
+        }}
+      />
+
+      <main className="admin">
+
+        {/* =========================================================
+            STUDENT PROGRESS DASHBOARD
+        ========================================================= */}
+
+        <section
+          className="adminSection studentProgressDashboard"
+          id="studentProgressDashboard"
+        >
+
+          <div className="adminSectionHeader">
+
+            <div>
+
+              <h2>
+                📊 Student Progress
+              </h2>
+
+              <p className="muted">
+                Monitor topic completion and learning progress.
+              </p>
+
+            </div>
+
+            {loadingStudentProgress && (
+              <span className="muted">
+                Loading progress…
+              </span>
+            )}
+
+          </div>
+
+
+          {/* SUMMARY */}
+
+          <div className="adminStatsGrid">
+
+            <div className="adminStatCard">
+              <span className="adminStatLabel">
+                👥 Total Students
+              </span>
+              <strong className="adminStatValue">
+                {studentProgressSummary.totalStudents}
+              </strong>
+            </div>
+
+
+            <div className="adminStatCard">
+              <span className="adminStatLabel">
+                ✅ Completed
+              </span>
+              <strong className="adminStatValue">
+                {studentProgressSummary.completedStudents}
+              </strong>
+            </div>
+
+
+            <div className="adminStatCard">
+              <span className="adminStatLabel">
+                🟡 In Progress
+              </span>
+              <strong className="adminStatValue">
+                {studentProgressSummary.inProgressStudents}
+              </strong>
+            </div>
+
+
+            <div className="adminStatCard">
+              <span className="adminStatLabel">
+                ⚪ Not Started
+              </span>
+              <strong className="adminStatValue">
+                {studentProgressSummary.notStartedStudents}
+              </strong>
+            </div>
+
+
+            <div className="adminStatCard">
+              <span className="adminStatLabel">
+                📈 Average Progress
+              </span>
+              <strong className="adminStatValue">
+                {studentProgressSummary.averageProgress}%
+              </strong>
+            </div>
+
+          </div>
+
+
+          {/* =====================================================
+              UNIT-WISE STUDENT DETAIL
+          ===================================================== */}
+
+          {selectedProgressStudent && (
+
+            <section className="adminSection">
+
+              <div className="adminSectionHeader">
+
+                <div>
+
+                  <h2>
+                    👤 {selectedProgressStudent.name}
+                  </h2>
+
+                  <p className="muted">
+
+                    {selectedProgressStudent.email || 'No email'}
+                    {' • '}
+                    Roll No:
+                    {' '}
+                    {selectedProgressStudent.rollNumber || '—'}
+
+                  </p>
+
+                </div>
+
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() =>
+                    setSelectedProgressStudent(null)
+                  }
+                >
+                  Close
+                </button>
+
+              </div>
+
+
+              <div className="card">
+
+                <h3>
+                  Overall Progress:
+                  {' '}
+                  {selectedProgressStudent.percentage}%
+                </h3>
+
+                <div className="studentProgressTrack">
+
+                  <div
+                    className="studentProgressFill"
+                    style={{
+                      width:
+                        `${selectedProgressStudent.percentage}%`
+                    }}
+                  />
+
+                </div>
+
+                <p className="muted">
+
+                  {selectedProgressStudent.completed}
+                  {' / '}
+                  {selectedProgressStudent.topics}
+                  {' '}
+                  recorded topics completed.
+
+                </p>
+
+              </div>
+
+
+              {/* UNIT-WISE BREAKDOWN */}
+
+              <div className="unitProgressList">
+
+                {Object.values(
+                  topics.reduce(
+                    (units, topic) => {
+
+                      const code =
+                        String(topic.unitCode || '');
+
+                      if (!units[code]) {
+
+                        units[code] = {
+                          code,
+                          title:
+                            topic.unitTitle || '',
+                          topics: [],
+                        };
+
+                      }
+
+                      units[code].topics.push(topic);
+
+                      return units;
+
+                    },
+                    {}
+                  )
+                ).map((unit) => {
+
+                  const completedTopics =
+                    unit.topics.filter(
+                      (topic) =>
+                        selectedProgressStudent
+                          .topicProgress?.[topic.id]
+                          ?.completed === true
+                    );
+
+                  const total =
+                    unit.topics.length;
+
+                  const completed =
+                    completedTopics.length;
+
+                  const percentage =
+                    total > 0
+                      ? Math.round(
+                          (completed / total) * 100
+                        )
+                      : 0;
+
+                  return (
+
+                    <details
+                      key={unit.code}
+                      className="card unitProgressCard"
+                    >
+
+                      <summary>
+
+                        <strong>
+                          Unit {unit.code}
+                          {' — '}
+                          {unit.title}
+                        </strong>
+
+                        <span>
+                          {completed}
+                          {' / '}
+                          {total}
+                          {' '}
+                          ({percentage}%)
+                        </span>
+
+                      </summary>
+
+
+                      <div className="unitProgressTrack">
+
+                        <div
+                          className="unitProgressFill"
+                          style={{
+                            width:
+                              `${percentage}%`
+                          }}
+                        />
+
+                      </div>
+
+
+                      <div className="unitTopicProgressList">
+
+                        {unit.topics.map(
+                          (topic) => {
+
+                            const done =
+                              selectedProgressStudent
+                                .topicProgress?.[topic.id]
+                                ?.completed === true;
+
+                            return (
+
+                              <div
+                                key={topic.id}
+                                className="unitTopicProgressItem"
+                              >
+
+                                <span>
+                                  {done
+                                    ? '✓'
+                                    : '○'}
+                                </span>
+
+                                <span>
+
+                                  <strong>
+                                    {topic.code}
+                                  </strong>
+
+                                  {' — '}
+                                  {topic.title}
+
+                                </span>
+
+                              </div>
+
+                            );
+
+                          }
+                        )}
+
+                      </div>
+
+                    </details>
+
+                  );
+
+                })}
+
+              </div>
+
+            </section>
+
+          )}
+
+          {/* STUDENT TABLE */}
+
+          {studentProgress.length > 0 ? (
+
+            <div className="studentProgressTableWrapper">
+
+              <table className="studentProgressTable">
+
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Student</th>
+                    <th>Email</th>
+                    <th>Topics</th>
+                    <th>Completed</th>
+                    <th>Progress</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+
+
+                <tbody>
+
+                  {studentProgress.map(
+                    (student, index) => (
+
+                      <tr
+                        key={student.uid}
+                        onClick={() =>
+                          setSelectedProgressStudent(student)
+                        }
+                        style={{
+                          cursor: 'pointer',
+                        }}
+                      >
+
+                        <td>
+                          {index + 1}
+                        </td>
+
+                        <td>
+                          <strong>
+                            {student.name}
+                          </strong>
+                        </td>
+
+                        <td>
+                          {student.email || '—'}
+                        </td>
+
+                        <td>
+                          {student.topics}
+                        </td>
+
+                        <td>
+                          {student.completed}
+                        </td>
+
+                        <td>
+
+                          <div className="studentProgressCell">
+
+                            <div className="studentProgressTrack">
+
+                              <div
+                                className="studentProgressFill"
+                                style={{
+                                  width:
+                                    `${student.percentage}%`
+                                }}
+                              />
+
+                            </div>
+
+                            <span>
+                              {student.percentage}%
+                            </span>
+
+                          </div>
+
+                        </td>
+
+                        <td>
+
+                          {student.percentage === 100
+                            ? '✅ Completed'
+                            : student.percentage > 0
+                            ? '🟡 In Progress'
+                            : '⚪ Not Started'}
+
+                        </td>
+
+                      </tr>
+
+                    )
+                  )}
+
+                </tbody>
+
+              </table>
+
+            </div>
+
+          ) : (
+
+            !loadingStudentProgress && (
+
+              <div className="card">
+
+                <p className="muted">
+                  No student progress has been recorded yet.
+                </p>
+
+              </div>
+
+            )
+
+          )}
+
+        </section>
+
+
+        <div className="adminTitleRow">
+
+          <div>
+
+            <h1>
+              Python Learning — Admin CMS
+            </h1>
+
+            <p className="muted">
+              Create and manage complete lessons, examples
+              and Python practice activities.
+            </p>
+
+          </div>
+
+          <button
+            type="button"
+            onClick={newTopic}
+          >
+            + New Topic
+          </button>
+
+        </div>
+
+
+        {error && (
+
+          <div className="adminMessage error">
+            {error}
+          </div>
+
+        )}
+
+
+        {success && (
+
+          <div className="adminMessage success">
+            {success}
+          </div>
+
+        )}
+
+
+        <div className="adminGrid">
+
+
+          {/* =================================================
+              LESSON EDITOR
+          ================================================= */}
+
+          <section>
+
+            <div className="cmsEditorHeader">
+
+              <div>
+
+                <h2>
+
+                  {editing
+                    ? `Edit ${form.code || ''}`
+                    : 'Create Topic'}
+
+                </h2>
+
+                {editing && (
+
+                  <p className="muted">
+                    {form.title}
+                  </p>
+
+                )}
+
+              </div>
+
+
+              {editing && (
+
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => setPreview(!preview)}
+                >
+                  {preview
+                    ? 'Edit Lesson'
+                    : 'Preview Lesson'}
+                </button>
+
+              )}
+
+            </div>
+
+
+            {!preview ? (
+
+              <form
+                onSubmit={save}
+                className="form lessonForm"
+              >
+
+
+                {/* =========================================
+                    SYLLABUS INFORMATION
+                ========================================= */}
+
+                <div className="formSection">
+
+                  <h3>
+                    1. Syllabus Information
+                  </h3>
+
+                  <input
+                    placeholder="Unit code e.g. 1"
+                    value={form.unitCode}
+                    onChange={e =>
+                      updateForm(
+                        'unitCode',
+                        e.target.value
+                      )
+                    }
+                    required
+                  />
+
+                  <input
+                    placeholder="Unit title"
+                    value={form.unitTitle}
+                    onChange={e =>
+                      updateForm(
+                        'unitTitle',
+                        e.target.value
+                      )
+                    }
+                    required
+                  />
+
+                  <input
+                    placeholder="Topic code e.g. 1.1.1"
+                    value={form.code}
+                    onChange={e =>
+                      updateForm(
+                        'code',
+                        e.target.value
+                      )
+                    }
+                    required
+                  />
+
+                  <input
+                    placeholder="Topic title"
+                    value={form.title}
+                    onChange={e =>
+                      updateForm(
+                        'title',
+                        e.target.value
+                      )
+                    }
+                    required
+                  />
+
+                  <input
+                    placeholder="Parent topic ID e.g. 1.1"
+                    value={form.parentId}
+                    onChange={e =>
+                      updateForm(
+                        'parentId',
+                        e.target.value
+                      )
+                    }
+                  />
+
+                  <input
+                    type="number"
+                    placeholder="Order"
+                    value={form.order}
+                    onChange={e =>
+                      updateForm(
+                        'order',
+                        e.target.value
+                      )
+                    }
+                  />
+
+                </div>
+
+
+                {/* =========================================
+                    INTRODUCTION
+                ========================================= */}
+
+                <div className="formSection">
+
+                  <h3>
+                    2. Introduction
+                  </h3>
+
+                  <textarea
+                    rows="7"
+                    placeholder="Write a simple introduction to the topic..."
+                    value={form.introduction}
+                    onChange={e =>
+                      updateForm(
+                        'introduction',
+                        e.target.value
+                      )
+                    }
+                  />
+
+                </div>
+
+
+                {/* =========================================
+                    LEARNING OBJECTIVES
+                ========================================= */}
+
+                <div className="formSection">
+
+                  <h3>
+                    3. Learning Objectives
+                  </h3>
+
+                  <p className="fieldHint">
+                    Enter one objective per line.
+                  </p>
+
+                  <textarea
+                    rows="7"
+                    placeholder={
+`Define computational thinking
+Explain the characteristics
+Apply computational thinking to a problem`
+                    }
+                    value={form.learningObjectives}
+                    onChange={e =>
+                      updateForm(
+                        'learningObjectives',
+                        e.target.value
+                      )
+                    }
+                  />
+
+                </div>
+
+
+                {/* =========================================
+                    DETAILED EXPLANATION
+                ========================================= */}
+
+                <div className="formSection">
+
+                  <h3>
+                    4. Detailed Explanation
+                  </h3>
+
+                  <textarea
+                    rows="14"
+                    placeholder="Write the complete teaching explanation..."
+                    value={form.explanation}
+                    onChange={e =>
+                      updateForm(
+                        'explanation',
+                        e.target.value
+                      )
+                    }
+                  />
+
+                </div>
+
+
+                {/* =========================================
+                    KEY POINTS
+                ========================================= */}
+
+                <div className="formSection">
+
+                  <h3>
+                    5. Key Points
+                  </h3>
+
+                  <p className="fieldHint">
+                    Enter one key point per line.
+                  </p>
+
+                  <textarea
+                    rows="8"
+                    placeholder={
+`Point 1
+Point 2
+Point 3`
+                    }
+                    value={form.keyPoints}
+                    onChange={e =>
+                      updateForm(
+                        'keyPoints',
+                        e.target.value
+                      )
+                    }
+                  />
+
+                </div>
+
+
+                {/* =========================================
+                    EXAMPLE
+                ========================================= */}
+
+                <div className="formSection">
+
+                  <h3>
+                    6. Example
+                  </h3>
+
+                  <input
+                    placeholder="Example title"
+                    value={form.exampleTitle}
+                    onChange={e =>
+                      updateForm(
+                        'exampleTitle',
+                        e.target.value
+                      )
+                    }
+                  />
+
+                  <textarea
+                    rows="7"
+                    placeholder="Explain the example..."
+                    value={form.exampleExplanation}
+                    onChange={e =>
+                      updateForm(
+                        'exampleExplanation',
+                        e.target.value
+                      )
+                    }
+                  />
+
+                </div>
+
+
+                {/* =========================================
+                    PYTHON CODE
+                ========================================= */}
+
+                <div className="formSection">
+
+                  <h3>
+                    7. Python Example Code
+                  </h3>
+
+                  <Editor
+                    height="280px"
+                    value={form.codeExample}
+                    onChange={value =>
+                      updateForm(
+                        'codeExample',
+                        value || ''
+                      )
+                    }
+                  />
+
+                </div>
+
+
+                {/* =========================================
+                    EXPECTED OUTPUT
+                ========================================= */}
+
+                <div className="formSection">
+
+                  <h3>
+                    8. Expected Output
+                  </h3>
+
+                  <textarea
+                    rows="6"
+                    placeholder="Enter the expected output..."
+                    value={form.expectedOutput}
+                    onChange={e =>
+                      updateForm(
+                        'expectedOutput',
+                        e.target.value
+                      )
+                    }
+                  />
+
+                </div>
+
+
+                {/* =========================================
+                    PRACTICE
+                ========================================= */}
+
+                <div className="formSection practiceSection">
+
+                  <h3>
+                    9. Student Practice
+                  </h3>
+
+                  <textarea
+                    rows="7"
+                    placeholder="Write the practice question..."
+                    value={form.practiceQuestion}
+                    onChange={e =>
+                      updateForm(
+                        'practiceQuestion',
+                        e.target.value
+                      )
+                    }
+                  />
+
+                  <textarea
+                    rows="7"
+                    placeholder="Practice instructions..."
+                    value={form.practiceInstructions}
+                    onChange={e =>
+                      updateForm(
+                        'practiceInstructions',
+                        e.target.value
+                      )
+                    }
+                  />
+
+                  <label>
+                    Starter Python Code
+                  </label>
+
+                  <Editor
+                    height="220px"
+                    value={form.practiceStarterCode}
+                    onChange={value =>
+                      updateForm(
+                        'practiceStarterCode',
+                        value || ''
+                      )
+                    }
+                  />
+
+                </div>
+
+
+                {/* =========================================
+                    NOTES
+                ========================================= */}
+
+                <div className="formSection">
+
+                  <h3>
+                    10. Important Notes
+                  </h3>
+
+                  <textarea
+                    rows="7"
+                    placeholder="Important points, warnings or common mistakes..."
+                    value={form.importantNotes}
+                    onChange={e =>
+                      updateForm(
+                        'importantNotes',
+                        e.target.value
+                      )
+                    }
+                  />
+
+                </div>
+
+
+                {/* =========================================
+                    SUMMARY
+                ========================================= */}
+
+                <div className="formSection">
+
+                  <h3>
+                    11. Summary
+                  </h3>
+
+                  <textarea
+                    rows="7"
+                    placeholder="Summarize the lesson..."
+                    value={form.summary}
+                    onChange={e =>
+                      updateForm(
+                        'summary',
+                        e.target.value
+                      )
+                    }
+                  />
+
+                </div>
+
+
+                {/* =========================================
+                    BUTTONS
+                ========================================= */}
+
+                <div className="cmsActions">
+
+                  <button type="submit">
+
+                    {editing
+                      ? 'Save Lesson'
+                      : 'Create Topic'}
+
+                  </button>
+
+                  {editing && (
+
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={cancelEdit}
+                    >
+                      Cancel
+                    </button>
+
+                  )}
+
+                </div>
+
+              </form>
+
+            ) : (
+
+              /* ===========================================
+                 LESSON PREVIEW
+              =========================================== */
+
+              <div className="lessonPreview">
+
+                <div className="lessonHeader">
+
+                  <small>
+                    Unit {form.unitCode}
+                  </small>
+
+                  <h1>
+                    {form.code} {form.title}
+                  </h1>
+
+                </div>
+
+
+                {form.introduction && (
+
+                  <section>
+
+                    <h2>
+                      Introduction
+                    </h2>
+
+                    <div className="lessonText">
+                      {form.introduction}
+                    </div>
+
+                  </section>
+
+                )}
+
+
+                {form.learningObjectives && (
+
+                  <section>
+
+                    <h2>
+                      Learning Objectives
+                    </h2>
+
+                    <ul>
+
+                      {form.learningObjectives
+                        .split('\n')
+                        .filter(Boolean)
+                        .map((item, index) => (
+                          <li key={index}>
+                            {item}
+                          </li>
+                        ))}
+
+                    </ul>
+
+                  </section>
+
+                )}
+
+
+                {form.explanation && (
+
+                  <section>
+
+                    <h2>
+                      Explanation
+                    </h2>
+
+                    <div className="lessonText">
+                      {form.explanation}
+                    </div>
+
+                  </section>
+
+                )}
+
+
+                {form.keyPoints && (
+
+                  <section>
+
+                    <h2>
+                      Key Points
+                    </h2>
+
+                    <ul>
+
+                      {form.keyPoints
+                        .split('\n')
+                        .filter(Boolean)
+                        .map((item, index) => (
+                          <li key={index}>
+                            {item}
+                          </li>
+                        ))}
+
+                    </ul>
+
+                  </section>
+
+                )}
+
+
+                {form.exampleTitle && (
+
+                  <section>
+
+                    <h2>
+                      {form.exampleTitle}
+                    </h2>
+
+                    <div className="lessonText">
+                      {form.exampleExplanation}
+                    </div>
+
+                  </section>
+
+                )}
+
+
+                {form.codeExample && (
+
+                  <section>
+
+                    <h2>
+                      Python Example
+                    </h2>
+
+                    <pre className="lessonCode">
+                      {form.codeExample}
+                    </pre>
+
+                  </section>
+
+                )}
+
+
+                {form.expectedOutput && (
+
+                  <section>
+
+                    <h2>
+                      Expected Output
+                    </h2>
+
+                    <pre className="lessonOutput">
+                      {form.expectedOutput}
+                    </pre>
+
+                  </section>
+
+                )}
+
+
+                {form.practiceQuestion && (
+
+                  <section className="lessonPractice">
+
+                    <h2>
+                      Practice
+                    </h2>
+
+                    <h3>
+                      {form.practiceQuestion}
+                    </h3>
+
+                    <div className="lessonText">
+                      {form.practiceInstructions}
+                    </div>
+
+                    {form.practiceStarterCode && (
+
+                      <pre className="lessonCode">
+                        {form.practiceStarterCode}
+                      </pre>
+
+                    )}
+
+                  </section>
+
+                )}
+
+
+                {form.importantNotes && (
+
+                  <section>
+
+                    <h2>
+                      Important Notes
+                    </h2>
+
+                    <div className="lessonText">
+                      {form.importantNotes}
+                    </div>
+
+                  </section>
+
+                )}
+
+
+                {form.summary && (
+
+                  <section>
+
+                    <h2>
+                      Summary
+                    </h2>
+
+                    <div className="lessonText">
+                      {form.summary}
+                    </div>
+
+                  </section>
+
+                )}
+
+              </div>
+
+            )}
+
+          </section>
+
+
+
+         
+
+
+{/* =================================================
+    LAB PRACTICE & OFFICIAL SOLUTIONS
+================================================= */}
+{/* =================================================
+    LAB PRACTICE & OFFICIAL SOLUTIONS
+================================================= */}
+
+{editing && (
+  <section className="labAdminPanel">
+
+    <div className="labAdminHeader">
+
+      <div>
+        <h2>
+          Lab Practice & Official Solutions
+        </h2>
+
+        <p className="muted">
+          {form.code} {form.title}
+        </p>
+      </div>
+
+    </div>
+
+
+    {loadingLabs && (
+      <p className="muted">
+        Loading lab problems…
+      </p>
+    )}
+
+
+    {!loadingLabs && labProblems.length === 0 && (
+      <div className="card">
+
+        <p className="muted">
+          No lab problems are assigned to this topic.
+        </p>
+
+      </div>
+    )}
+
+
+    {!loadingLabs &&
+      labProblems.map((problem) => (
+
+        <div
+          key={problem.id}
+          className="labAdminCard"
+        >
+
+          <div className="labAdminProblem">
+
+            <div>
+
+  <div className="labProblemMeta">
+
+    <span className="problemTypeBadge">
+
+      {problem.problemType === 'placement'
+        ? '🏆 Placement Problem'
+        : '🧪 Lab Program'}
+
+    </span>
+
+    <span className="difficultyBadge">
+
+      {problem.difficulty || 'easy'}
+
+    </span>
+
+  </div>
+
+
+  <strong>
+    {problem.title}
+  </strong>
+
+
+  <p>
+    {problem.problem}
+  </p>
+
+</div>
+
+            <div className="solutionControls">
+
+              <button
+                type="button"
+                className={
+                  problem.visible
+                    ? 'solutionOn'
+                    : 'solutionOff'
+                }
+                onClick={() =>
+                  toggleSolution(problem)
+                }
+              >
+
+                {problem.visible
+                  ? '● Solution ON'
+                  : '○ Solution OFF'}
+
+              </button>
+
+
+              <button
+                type="button"
+                className="secondary"
+                onClick={() =>
+                  editSolution(problem)
+                }
+              >
+                Edit Solution
+              </button>
+
+            </div>
+
+          </div>
+
+
+          {editingSolution === problem.id && (
+
+            <div className="solutionEditor">
+
+              <h3>
+                Edit Official Solution
+              </h3>
+
+
+              <input
+                value={solutionTitle}
+                onChange={(e) =>
+                  setSolutionTitle(e.target.value)
+                }
+                placeholder="Solution title"
+              />
+                 <div className="problemSettings">
+
+  <div className="problemSetting">
+
+    <label>
+      <strong>Problem Type</strong>
+    </label>
+
+    <select
+      value={problemType}
+      onChange={(e) =>
+        setProblemType(e.target.value)
+      }
+    >
+      <option value="lab">
+        🧪 Lab Program
+      </option>
+
+      <option value="placement">
+        🏆 Placement Problem
+      </option>
+    </select>
+
+  </div>
+
+
+  <div className="problemSetting">
+
+    <label>
+      <strong>Difficulty</strong>
+    </label>
+
+    <select
+      value={problemDifficulty}
+      onChange={(e) =>
+        setProblemDifficulty(e.target.value)
+      }
+    >
+      <option value="easy">
+        Easy
+      </option>
+
+      <option value="medium">
+        Medium
+      </option>
+
+      <option value="hard">
+        Hard
+      </option>
+    </select>
+
+  </div>
+
+</div>
+
+              <Editor
+                height="280px"
+                value={solutionCode}
+                onChange={(value) =>
+                  setSolutionCode(value || '')
+                }
+              />
+
+
+              <div className="cmsActions">
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    saveSolution(problem)
+                  }
+                >
+                  Save Solution
+                </button>
+
+
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() =>
+                    setEditingSolution(null)
+                  }
+                >
+                  Cancel
+                </button>
+
+              </div>
+
+            </div>
+
+          )}
+
+        </div>
+
+      ))
+    }
+
+  </section>
+)}
+
+
+{/* =================================================
+              TOPIC LIST
+================================================= */}
+            
+ {/* =================================================
+              TOPIC LIST
+          ================================================= */}
+          <section>
+
+            <div className="topicListHeader">
+
+              <div>
+
+                <h2>
+                  Syllabus Topics
+                </h2>
+
+                <p className="muted">
+                  {topics.length} topics
+                </p>
+
+              </div>
+
+            </div>
+
+
+            {loadingTopics && (
+
+              <p>
+                Loading topics…
+              </p>
+
+            )}
+
+
+            {!loadingTopics &&
+              topics.length === 0 && (
+
+                <div className="card">
+
+                  <h3>
+                    No topics yet
+                  </h3>
+
+                  <p className="muted">
+                    Add your first topic.
+                  </p>
+
+                </div>
+
+              )}
+
+
+            {!loadingTopics &&
+              topics.map(topic => (
+
+                <div
+                  className={
+                    editing === topic.id
+                      ? 'listRow selectedTopic'
+                      : 'listRow'
+                  }
+                  key={topic.id}
+                >
+
+                  <div>
+
+                    <b>
+                      {topic.code}{' '}
+                      {topic.title}
+                    </b>
+
+                    <small>
+                      Unit {topic.unitCode}
+
+                      {topic.parentId
+                        ? ` • Parent: ${topic.parentId}`
+                        : ''}
+                    </small>
+
+                    <small>
+
+                      {topic.introduction ||
+                      topic.explanation ||
+                      topic.codeExample
+                        ? '✓ Lesson content added'
+                        : '○ Lesson content empty'}
+
+                    </small>
+
+                  </div>
+
+
+                  <div className="topicActions">
+
+                    <button
+                      onClick={() =>
+                        editTopic(topic)
+                      }
+                    >
+                      Edit
+                    </button>
+
+                    <button
+                      className="danger"
+                      onClick={() =>
+                        remove(topic.id)
+                      }
+                    >
+                      Delete
+                    </button>
+
+                  </div>
+
+                </div>
+
+              ))}
+
+          </section>
+
+        </div>
+
+      </main>
+
+    </>
+
+  );
+
+}

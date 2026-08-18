@@ -1,0 +1,556 @@
+'use client';
+
+import { useEffect, useRef, useState } from 'react';
+
+import {
+  doc,
+  onSnapshot,
+  serverTimestamp,
+  setDoc,
+} from 'firebase/firestore';
+
+import { db } from '../lib/firebase';
+
+
+// =========================================================
+// LAB PRACTICE
+// =========================================================
+
+export default function LabPractice({
+  user,
+  problem,
+}) {
+
+  const [code, setCode] = useState('');
+
+  const [output, setOutput] = useState('');
+
+  const [input, setInput] = useState('');
+  
+  const [saving, setSaving] = useState(false);
+
+  const [sharedCode, setSharedCode] = useState(null);
+
+  const worker = useRef(null);
+
+  const saveTimer = useRef(null);
+
+
+  // =======================================================
+  // LOAD STUDENT'S EXISTING CODE
+  // =======================================================
+
+  useEffect(() => {
+
+    if (!user?.uid || !problem?.id) {
+      return;
+    }
+
+    const submissionId =
+      `${user.uid}_${problem.id}`;
+
+    const submissionRef =
+      doc(
+        db,
+        'labSubmissions',
+        submissionId
+      );
+
+    const unsubscribe =
+      onSnapshot(
+        submissionRef,
+        (snapshot) => {
+
+          if (!snapshot.exists()) {
+            return;
+          }
+
+          const data =
+            snapshot.data();
+
+          if (
+            typeof data.code === 'string'
+          ) {
+            setCode(data.code);
+          }
+
+        },
+        (error) => {
+
+          console.error(
+            'Student code loading error:',
+            error
+          );
+
+        }
+      );
+
+    return () => unsubscribe();
+
+  }, [
+    user?.uid,
+    problem?.id,
+  ]);
+
+
+  // =======================================================
+  // LISTEN FOR ADMIN-SHARED CODE
+  // =======================================================
+
+  useEffect(() => {
+
+    if (!problem?.id) {
+      setSharedCode(null);
+      return;
+    }
+
+    const sharedRef =
+      doc(
+        db,
+        'sharedLabCode',
+        problem.id
+      );
+
+    const unsubscribe =
+      onSnapshot(
+        sharedRef,
+        (snapshot) => {
+
+          if (!snapshot.exists()) {
+
+            setSharedCode(null);
+
+            return;
+          }
+
+          setSharedCode(
+            snapshot.data()
+          );
+
+        },
+        (error) => {
+
+          console.error(
+            'Shared code loading error:',
+            error
+          );
+
+        }
+      );
+
+    return () => unsubscribe();
+
+  }, [
+    problem?.id,
+  ]);
+
+
+  // =======================================================
+  // SAVE STUDENT CODE
+  // =======================================================
+
+  function saveCode(value) {
+
+    setCode(value);
+
+    if (
+      !user?.uid ||
+      !problem?.id
+    ) {
+      return;
+    }
+
+    if (saveTimer.current) {
+
+      clearTimeout(
+        saveTimer.current
+      );
+
+    }
+
+    setSaving(true);
+
+    saveTimer.current =
+      setTimeout(
+        async () => {
+
+          try {
+
+            const submissionId =
+              `${user.uid}_${problem.id}`;
+
+            await setDoc(
+              doc(
+                db,
+                'labSubmissions',
+                submissionId
+              ),
+              {
+                uid: user.uid,
+
+                problemId:
+                  problem.id,
+
+                topicCode:
+                  problem.topicCode || '',
+
+                title:
+                  problem.title || '',
+
+                code: value,
+
+                updatedAt:
+                  serverTimestamp(),
+              },
+              {
+                merge: true,
+              }
+            );
+
+          } catch (error) {
+
+            console.error(
+              'Code save error:',
+              error
+            );
+
+          } finally {
+
+            setSaving(false);
+
+          }
+
+        },
+        500
+      );
+
+  }
+
+
+  // =======================================================
+  // RUN PYTHON
+  // =======================================================
+
+function runCode() {
+
+  if (!code.trim()) {
+
+    setOutput('Please enter Python code.');
+
+    return;
+
+  }
+
+
+  // Find Python input() calls and extract their prompts.
+  const inputPattern =
+    /input\s*\(\s*(?:(["'])(.*?)\1)?\s*\)/g;
+
+  const prompts = [];
+
+  let match;
+
+  while (
+    (match = inputPattern.exec(code)) !== null
+  ) {
+
+    prompts.push(
+      match[2] || 'Enter input:'
+    );
+
+  }
+function runPythonWithInput(inputValues) {
+
+  setBusy(true);
+
+  setOutput('Running…');
+
+
+  if (worker.current) {
+
+    worker.current.terminate();
+
+  }
+
+
+  worker.current =
+    new Worker(
+      '/workers/python.worker.js'
+    );
+
+
+  worker.current.onmessage =
+    (event) => {
+
+      setBusy(false);
+
+      setOutput(
+        event.data.output || ''
+      );
+
+    };
+
+
+  worker.current.onerror =
+    (error) => {
+
+      setBusy(false);
+
+      setOutput(
+        'Python Worker Error:\n' +
+        (
+          error.message ||
+          'Unable to run Python.'
+        )
+      );
+
+    };
+
+
+  worker.current.postMessage({
+
+    code,
+
+    input:
+      inputValues,
+
+  });
+
+}
+
+  // =====================================================
+  // NO INPUT REQUIRED
+  // =====================================================
+
+  if (prompts.length === 0) {
+
+    runPythonWithInput('');
+
+    return;
+
+  }
+
+
+  // =====================================================
+  // ASK FOR INPUT DYNAMICALLY
+  // =====================================================
+
+  const inputValues = [];
+
+  for (
+    let index = 0;
+    index < prompts.length;
+    index++
+  ) {
+
+    const value =
+      window.prompt(
+        prompts[index]
+      );
+
+    // User pressed Cancel
+    if (value === null) {
+
+      setOutput(
+        'Program execution cancelled.'
+      );
+
+      return;
+
+    }
+
+    inputValues.push(value);
+
+  }
+
+
+  // =====================================================
+  // RUN PYTHON WITH COLLECTED INPUT
+  // =====================================================
+
+  runPythonWithInput(
+    inputValues.join('\n')
+  );
+
+}
+
+
+
+  // =======================================================
+  // RESET
+  // =======================================================
+
+  function resetCode() {
+
+    const initial =
+      problem?.starterCode || '';
+
+    saveCode(initial);
+
+    setOutput('');
+
+  }
+
+
+  // =======================================================
+  // CLEANUP
+  // =======================================================
+
+  useEffect(() => {
+
+    return () => {
+
+      if (saveTimer.current) {
+
+        clearTimeout(
+          saveTimer.current
+        );
+
+      }
+
+      if (worker.current) {
+
+        worker.current.terminate();
+
+      }
+
+    };
+
+  }, []);
+
+
+  if (!problem) {
+    return null;
+  }
+
+
+  return (
+
+    <section className="labPractice">
+
+      <div className="labHeader">
+
+        <div>
+
+          <h2>
+            Lab Practice
+          </h2>
+
+          <h3>
+            {problem.title}
+          </h3>
+
+        </div>
+
+        <span className="saveStatus">
+
+          {saving
+            ? 'Saving…'
+            : 'Saved'}
+
+        </span>
+
+      </div>
+
+
+      {problem.problem && (
+
+        <div className="labProblem">
+
+          <h3>
+            Problem
+          </h3>
+
+          <div
+            dangerouslySetInnerHTML={{
+              __html:
+                problem.problem,
+            }}
+          />
+
+        </div>
+
+      )}
+
+
+      <div className="labEditor">
+
+        <textarea
+          className="simpleEditor"
+          value={code}
+          onChange={(e) =>
+            saveCode(
+              e.target.value
+            )
+          }
+          spellCheck={false}
+          placeholder="Write your Python code here..."
+        />
+
+
+      </div>
+
+      {/* =================================================
+          PROGRAM INPUT
+      ================================================= */}
+
+
+      {/* =================================================
+          OFFICIAL SOLUTION
+      ================================================= */}
+
+      {problem.visible && (
+
+        <details className="officialSolution">
+
+          <summary>
+            📘 Official Solution
+          </summary>
+
+          <div className="solutionBox">
+
+            {problem.solution && (
+
+              <pre>
+                {problem.solution}
+              </pre>
+
+            )}
+
+          </div>
+
+        </details>
+
+      )}
+
+
+      {/* =================================================
+          ADMIN-SHARED STUDENT CODE
+      ================================================= */}
+
+      {sharedCode && (
+
+        <section className="sharedStudentCode">
+
+          <h3>
+            ⭐ Shared Student Solution
+          </h3>
+
+          <p className="muted">
+            A solution selected by the faculty
+            is being shared with the class.
+          </p>
+
+          <pre>
+            {sharedCode.code || ''}
+          </pre>
+
+        </section>
+
+      )}
+
+    </section>
+
+  );
+
+}

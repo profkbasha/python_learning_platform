@@ -1,0 +1,162 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function admin() {
+      return signedIn() && request.auth.token.admin == true;
+    }
+
+
+    // =========================================================
+    // USERS
+    // =========================================================
+
+    match /users/{uid} {
+      allow read: if signedIn()
+        && (request.auth.uid == uid || admin());
+
+      allow create, update: if signedIn()
+        && request.auth.uid == uid;
+
+      allow delete: if admin();
+    }
+
+
+    // =========================================================
+    // SYLLABUS TOPICS
+    // =========================================================
+
+    match /topics/{id} {
+      allow read: if signedIn();
+      allow write: if admin();
+    }
+
+
+    // =========================================================
+    // LIVE SESSIONS
+    // =========================================================
+
+    match /liveSessions/{id} {
+      allow read: if signedIn();
+      allow write: if admin();
+    }
+
+
+    // =========================================================
+    // LIVE PARTICIPANTS
+    // =========================================================
+
+    match /liveParticipants/{uid} {
+      allow read: if signedIn();
+
+      allow create, update: if signedIn()
+        && request.auth.uid == uid;
+
+      allow delete: if admin()
+        || (signedIn() && request.auth.uid == uid);
+    }
+
+
+    // =========================================================
+    // LIVE PRACTICE
+    // =========================================================
+
+    match /livePractice/{uid} {
+      allow read: if admin()
+        || (signedIn() && request.auth.uid == uid);
+
+      allow create, update: if signedIn()
+        && request.auth.uid == uid;
+
+      allow delete: if admin()
+        || (signedIn() && request.auth.uid == uid);
+    }
+
+
+    // =========================================================
+    // PRESENTATIONS
+    // =========================================================
+
+    match /presentations/{id} {
+      allow read: if signedIn();
+      allow write: if admin();
+    }
+
+
+    // =========================================================
+    // OFFICIAL LAB SOLUTIONS
+    // =========================================================
+
+    match /topicSolutions/{id} {
+      allow read: if admin()
+        || (signedIn() && resource.data.visible == true);
+
+      allow create, update, delete: if admin();
+    }
+
+   match /labProblems/{id} {
+     allow read: if signedIn();
+     allow write: if admin();
+    }
+
+
+    // =========================================================
+    // STUDENT LAB SUBMISSIONS
+    //
+    // Student:
+    //   - Can create/update ONLY their own submission.
+    //   - Can read ONLY their own submission.
+    //
+    // Admin:
+    //   - Can read all student submissions.
+    // =========================================================
+
+    match /labSubmissions/{id} {
+
+      allow read: if admin()
+        || (
+          signedIn()
+          && resource.data.uid == request.auth.uid
+        );
+
+      allow create: if signedIn()
+        && request.resource.data.uid == request.auth.uid;
+
+      allow update: if signedIn()
+        && resource.data.uid == request.auth.uid
+        && request.resource.data.uid == request.auth.uid;
+
+      allow delete: if admin()
+        || (
+          signedIn()
+          && resource.data.uid == request.auth.uid
+        );
+    }
+
+
+    // =========================================================
+    // SHARED STUDENT CODE
+    //
+    // Admin:
+    //   - Can create/update/delete.
+    //
+    // Students:
+    //   - Can read.
+    //
+    // Students CANNOT publish or modify shared code.
+    // =========================================================
+
+    match /sharedLabCode/{id} {
+
+      allow read: if signedIn();
+
+      allow create, update, delete: if admin();
+    }
+
+  }
+}

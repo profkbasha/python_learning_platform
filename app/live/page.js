@@ -24,7 +24,11 @@ import {
 import Header from '../../components/Header';
 import Editor from '../../components/Editor';
 import PythonPlayground from '../../components/PythonPlayground';
+import LivePresentation from '../../components/LivePresentation';
 import PptxFreeViewer from '../../components/PptxFreeViewer';
+
+
+
 export default function Live() {
   const [user, setUser] = useState(null);
   const [session, setSession] = useState(null);

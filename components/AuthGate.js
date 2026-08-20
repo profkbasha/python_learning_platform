@@ -128,10 +128,14 @@ export function AuthGate() {
 
   useEffect(() => {
 
+    // Only redirect from the home/login page.
+    // Do NOT redirect users away from /admin, /live, /learn, etc.
+
     if (
       !loading &&
       user &&
-      profile
+      profile &&
+      window.location.pathname === '/'
     ) {
 
       router.replace('/learn');

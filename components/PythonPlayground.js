@@ -73,6 +73,14 @@ export default function PythonPlayground({
     setCode(nextCode);
     onCodeChange?.(nextCode);
   }
+  // Keep read-only/student editor synchronized with teacher code
+  useEffect(() => {
+    if (readOnly) {
+      setCode(initialCode || '');
+    }
+  }, [initialCode, readOnly]);
+
+
 
   function runPython() {
     if (!workerRef.current) {

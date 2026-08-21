@@ -19,6 +19,7 @@ import {
   onSnapshot,
   serverTimestamp,
   setDoc,
+  updateDoc,
 } from 'firebase/firestore';
 
 import Header from '../../components/Header';
@@ -42,7 +43,7 @@ export default function Live() {
   const [presentationCode, setPresentationCode] = useState(
     'print("Hello students!")'
   );
-
+  const [currentMode, setCurrentMode] = useState('presentation');
   const [fullscreen, setFullscreen] = useState(false);
   const [fullscreenMessage, setFullscreenMessage] = useState('');
   const [profile, setProfile] = useState(null);
@@ -92,11 +93,21 @@ useEffect(() => {
       doc(db, 'liveSessions', 'current'),
 
       (snapshot) => {
-        if (snapshot.exists()) {
-          setSession(snapshot.data());
-        } else {
-          setSession(null);
-        }
+
+       if (snapshot.exists()) {
+  const data = snapshot.data();
+
+  setSession(data);
+
+  setCurrentMode(
+    data.currentMode || 'presentation'
+  );
+} else {
+  setSession(null);
+  setCurrentMode('presentation');
+}
+
+
 
         setFirebaseError('');
       },
@@ -453,10 +464,12 @@ useEffect(() => {
         doc(db, 'liveSessions', 'current'),
         {
           active: true,
+          
+          currentMode: 'presentation',
           presentationUrl: '',
-presentationName: '',
-currentSlide: 1,
-totalSlides: 0,
+          presentationName: '',
+          currentSlide: 1,
+          totalSlides: 0,
 
           id: sessionId,
 
@@ -754,6 +767,85 @@ async function endSession() {
 
 <section>
 
+  <div
+    style={{
+      display: 'flex',
+      gap: '12px',
+      marginBottom: '20px',
+      flexWrap: 'wrap',
+    }}
+  >
+
+    <button
+      type="button"
+      onClick={async () => {
+        try {
+          await updateDoc(
+            doc(
+              db,
+              'liveSessions',
+              'current'
+            ),
+            {
+              currentMode: 'presentation',
+            }
+          );
+
+          setCurrentMode('presentation');
+
+        } catch (error) {
+          console.error(
+            'Unable to switch to presentation mode:',
+            error
+          );
+        }
+      }}
+      style={{
+        fontWeight:
+          currentMode === 'presentation'
+            ? '700'
+            : '400',
+      }}
+    >
+      📊 Presentation
+    </button>
+
+    <button
+      type="button"
+      onClick={async () => {
+        try {
+          await updateDoc(
+            doc(
+              db,
+              'liveSessions',
+              'current'
+            ),
+            {
+              currentMode: 'code',
+            }
+          );
+
+          setCurrentMode('code');
+
+        } catch (error) {
+          console.error(
+            'Unable to switch to code mode:',
+            error
+          );
+        }
+      }}
+      style={{
+        fontWeight:
+          currentMode === 'code'
+            ? '700'
+            : '400',
+      }}
+    >
+      💻 Python Code
+    </button>
+
+  </div>
+
   <PptxFreeViewer
     admin={true}
     session={session}
@@ -761,19 +853,38 @@ async function endSession() {
 
 </section>
 
-
 <section>
 
   <h2>
     👨‍🏫 Teacher Python Demonstration
   </h2>
 
-  <PythonPlayground
-    initialCode={presentationCode}
-    onCodeChange={setPresentationCode}
-    height="380px"
-  />
+<PythonPlayground
+  initialCode={presentationCode}
+  onCodeChange={async (code) => {
+    setPresentationCode(code);
 
+    try {
+      await updateDoc(
+        doc(db, 'liveSessions', 'current'),
+        {
+          sharedCode: code,
+          sharedBy: user?.uid || null,
+          sharedName:
+            user?.displayName ||
+            user?.email ||
+            'Teacher',
+        }
+      );
+    } catch (error) {
+      console.error(
+        'Unable to share Python code:',
+        error
+      );
+    }
+  }}
+  height="380px"
+/>
 </section>
 
 
@@ -788,6 +899,9 @@ async function endSession() {
   // =========================================================
   // STUDENT VIEW — NO EDITOR
   // =========================================================
+const studentMode =
+  session?.currentMode || 'presentation';
+
 
   if (!session?.active) {
     return (
@@ -867,10 +981,26 @@ async function endSession() {
               Teacher Presentation
             </h2>
 
-<LivePresentation
-  admin={false}
-  session={session}
-/>
+
+{studentMode === 'presentation' ? (
+  <PptxFreeViewer
+    admin={false}
+    session={session}
+  />
+
+) : (
+
+  <PythonPlayground
+    initialCode={
+      session?.sharedCode ||
+      'print("Waiting for teacher code...")'
+    }
+    readOnly={true}
+    height="500px"
+  />
+
+)}
+
           </section>
         )}
 
